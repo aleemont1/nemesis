@@ -11,10 +11,10 @@ BME680Sensor::BME680Sensor()
     bme = Adafruit_BME680(&Wire);
 }
 
-bool BME680Sensor::init()
+bool BME680Sensor::init(uint8_t addr)
 {
     int attempts = 0;
-    while (!bme.begin() && attempts++ < SENSOR_LOOKUP_MAX_ATTEMPTS)
+    while (!bme.begin(addr) && attempts++ < SENSOR_LOOKUP_MAX_ATTEMPTS)
     {
         Serial.println("Could not find a valid BME680 sensor, check wiring!");
         delay(1000);
@@ -24,13 +24,15 @@ bool BME680Sensor::init()
         return initialized;
     }
     // Set up oversampling and filter initialization (NOTE: need to study the optimal values)
-    bme.setTemperatureOversampling(BME680_OS_8X);   // Set temperature oversampling
-    bme.setHumidityOversampling(BME680_OS_2X);      // Set humidity oversampling
-    bme.setPressureOversampling(BME680_OS_4X);      // Set pressure oversampling
-    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);     // Set filter size
-    bme.setGasHeater(0, 0);                         // Disable gas heater
+    
+    Serial.println("BME680 Sensor initialized successfully");
     initialized = true;
     return initialized;
+}
+
+bool BME680Sensor::init()
+{
+    return this->init(0x77);
 }
 
 bool BME680Sensor::readData()

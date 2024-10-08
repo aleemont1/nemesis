@@ -28,6 +28,7 @@ public:
     BME680Sensor();
     bool init() override;
     bool readData() override;
+    bool init(uint8_t addr);
     BME680SensorData getData() override;
 private:
     Adafruit_BME680 bme;
