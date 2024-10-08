@@ -1,15 +1,19 @@
 #include <Wire.h>
 #include "sensors/BME680/BME680Sensor.h"
+#include "sensors/BN0055/BNO055Sensor.h"
 
 BME680Sensor bme680;
 BME680Sensor bme680_2;
+BNO055Sensor bno055;
+
 void setup()
 {
     Serial.begin(115200);
     while (!Serial);
-    Serial.println(F("BME680 test"));
+    Serial.println(F("BME680 & BNO055 test"));
     bme680.init(BME680_I2C_ADDR_1);
     bme680_2.init(BME680_I2C_ADDR_2);
+    bno055.init();
 }
 
 void loop()
@@ -20,5 +24,8 @@ void loop()
     bme680_2.readData();
     Serial.println("BME680_2: ");
     Serial.print(bme680_2.getData().toString());
-    delay(2000);
+    bno055.readData();
+    Serial.println("BNO055: ");
+    Serial.print(bno055.getData().toString());
+    delay(1000);
 }
