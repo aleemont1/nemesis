@@ -19,12 +19,12 @@ bool BME680Sensor::init(uint8_t addr)
         Serial.println("Could not find a valid BME680 sensor, check wiring!");
         delay(1000);
     }
-    if(attempts >= SENSOR_LOOKUP_MAX_ATTEMPTS)
+    if (attempts >= SENSOR_LOOKUP_MAX_ATTEMPTS)
     {
         return initialized;
     }
     // Set up oversampling and filter initialization (NOTE: need to study the optimal values)
-    
+
     Serial.println("BME680 Sensor initialized successfully");
     initialized = true;
     return initialized;
@@ -46,7 +46,7 @@ bool BME680Sensor::readData()
     {
         Serial.println("BME680 Failed to perform reading :(");
         return false;
-    } 
+    }
     Serial.println("BME680 Reading performed successfully");
     return true;
 }
