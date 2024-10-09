@@ -4,15 +4,14 @@
 
 class MPRLSSensorData : public SensorData
 {
+    friend class MPRLSSensor;
 public:
-    MPRLSSensorData() : pressure(-1) {}
-
-    MPRLSSensorData(float _pressure) : pressure(_pressure) {}
-
-    float getPressure() const { return this->pressure; };
+    float getPressure() const { return this->pressure; }
     String toString() override;
 
 private:
+    MPRLSSensorData() : pressure(-10000) {}
+    MPRLSSensorData(float _pressure) : pressure(_pressure) {}
     float pressure;
 };
 #endif // MPRLS_SENSOR_DATA_H

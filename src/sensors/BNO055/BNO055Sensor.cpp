@@ -1,4 +1,5 @@
 #include "sensors/BNO055/BNO055SensorData.h"
+#include "sensors/BME680/BME680SensorData.h"
 #include "BNO055Sensor.h"
 #include "const/config.h"
 

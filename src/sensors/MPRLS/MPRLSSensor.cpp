@@ -33,7 +33,7 @@ bool MPRLSSensor::readData()
         return false;
     }
     this->pressure = mprls.readPressure();
-    return this->pressure >= 0;    
+    return this->pressure >= 0;
 }
 
 MPRLSSensorData MPRLSSensor::getData()
@@ -41,7 +41,7 @@ MPRLSSensorData MPRLSSensor::getData()
     if (!initialized)
     {
         Serial.println("MPRLS Sensor not initialized");
-        return MPRLSSensorData();
+        return MPRLSSensorData(-10000); // Return a dummy value, easy to spot a problem.
     }
     return MPRLSSensorData(this->pressure);
 }
