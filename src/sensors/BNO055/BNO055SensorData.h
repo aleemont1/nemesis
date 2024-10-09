@@ -82,7 +82,9 @@ public:
     String toString() override;
 
 private:
-    BNO055SensorData() : board_temperature(-16), system_calibration(-1), gyro_calibration(-1), accel_calibration(-1), mag_calibration(-1) {}
+    BNO055SensorData() : orientation({0, 0, 0, 0, 0}), angularVelocity({0, 0, 0, 0, 0}), linearAcceleration({0, 0, 0, 0, 0}),
+                         magnetometer({0, 0, 0, 0, 0}), accelerometer({0, 0, 0, 0, 0}), gravity({0, 0, 0, 0, 0}), board_temperature(-16),
+                         system_calibration(0), gyro_calibration(0), accel_calibration(0), mag_calibration(0) {}
     /**
      * @brief Construct a new BNO055SensorData object
      *
@@ -107,18 +109,18 @@ private:
                                                                                                                                      mag_calibration(_mag_calibration) {}
 
     /* Sensor data */
-    sensors_vec_t orientation;
-    sensors_vec_t angularVelocity;
-    sensors_vec_t linearAcceleration;
-    sensors_vec_t magnetometer;
-    sensors_vec_t accelerometer;
-    sensors_vec_t gravity;
+    const sensors_vec_t orientation;
+    const sensors_vec_t angularVelocity;
+    const sensors_vec_t linearAcceleration;
+    const sensors_vec_t magnetometer;
+    const sensors_vec_t accelerometer;
+    const sensors_vec_t gravity;
 
     /* Board info */
-    int8_t board_temperature;
-    uint8_t system_calibration;
-    uint8_t gyro_calibration;
-    uint8_t accel_calibration;
-    uint8_t mag_calibration;
+    const int8_t board_temperature;
+    const uint8_t system_calibration;
+    const uint8_t gyro_calibration;
+    const uint8_t accel_calibration;
+    const uint8_t mag_calibration;
 };
 #endif // BNO055_SENSOR_DATA_H

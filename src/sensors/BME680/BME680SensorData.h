@@ -21,10 +21,10 @@ private:
     BME680SensorData() : temperature(-39), pressure(-1), humidity(-1), gas_resistance(-1) {}
     BME680SensorData(float temp, uint32_t pres, float hum, uint32_t gas_res) : temperature(temp), pressure(pres), humidity(hum), gas_resistance(gas_res) {}
 
-    float temperature;
-    uint32_t pressure;
-    float humidity;
-    uint32_t gas_resistance;
+    const float temperature;
+    const uint32_t pressure;
+    const float humidity;
+    const uint32_t gas_resistance;
 };
 
 #endif // BME680_SENSOR_DATA_H

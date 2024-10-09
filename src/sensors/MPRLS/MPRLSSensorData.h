@@ -13,6 +13,6 @@ public:
 private:
     MPRLSSensorData() : pressure(-10000) {}
     MPRLSSensorData(float _pressure) : pressure(_pressure) {}
-    float pressure;
+    const float pressure;
 };
 #endif // MPRLS_SENSOR_DATA_H
