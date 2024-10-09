@@ -12,6 +12,7 @@ public:
     bool readData() override;
     bool calibrate();
     BNO055SensorData getData() override;
+
 private:
     Adafruit_BNO055 bno055;
 };

@@ -41,7 +41,7 @@ bool BNO055Sensor::readData()
     {
         Serial.println("BNO055 Sensor not initialized");
         return false;
-    }    
+    }
     bno055.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
     bno055.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
     bno055.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
@@ -67,12 +67,12 @@ BNO055SensorData BNO055Sensor::getData()
 
 bool BNO055Sensor::calibrate()
 {
-    if(!initialized)
+    if (!initialized)
     {
         Serial.println("BNO055 Sensor not initialized");
         return false;
     }
-    while(!isCalibrated())
+    while (!isCalibrated())
     {
         Serial.println("BNO055 Sensor not fully calibrated. Proceed to calibration...");
         bno055.getCalibration(&systemCal, &gyroCal, &accelCal, &magCal);

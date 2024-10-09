@@ -5,6 +5,7 @@
 class MPRLSSensorData : public SensorData
 {
     friend class MPRLSSensor;
+
 public:
     float getPressure() const { return this->pressure; }
     String toString() override;

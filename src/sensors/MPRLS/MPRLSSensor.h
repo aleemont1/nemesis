@@ -11,6 +11,7 @@ public:
     bool init() override;
     bool readData() override;
     MPRLSSensorData getData() override;
+
 private:
     Adafruit_MPRLS mprls;
     float pressure;
