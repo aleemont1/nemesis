@@ -26,7 +26,7 @@ void RocketLogger::logSensorData(const SensorData sensorData) {
 
 // Function to get all logged sensor data as a JSON list
 json RocketLogger::getJSONAll() const {
-    json jsonDataList = json::array();  // Create a JSON array
+    json jsonDataList = json::array();
     for (const auto& sensorData : this->logDataList) {
         jsonDataList.push_back(sensorData.toJSON());  // Convert each sensor data to JSON
     }
