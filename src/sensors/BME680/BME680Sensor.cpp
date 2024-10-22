@@ -2,8 +2,6 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 
-bool initialized = false;
-
 BME680Sensor::BME680Sensor(uint8_t addr)
 {
     bme = Adafruit_BME680(&Wire);
@@ -24,7 +22,7 @@ bool BME680Sensor::init()
     }
     if (attempts >= SENSOR_LOOKUP_MAX_ATTEMPTS)
     {
-        return initialized;
+        return this->initialized;
     }
     // Set up oversampling (NOTE: need to study the optimal values)
     bme.setGasHeater(0,0);                           // Turn off gas heater
@@ -32,13 +30,13 @@ bool BME680Sensor::init()
     bme.setHumidityOversampling(BME680_OS_1X);      // Set humidity oversampling to 1x
     bme.setPressureOversampling(BME680_OS_16X);     // Set pressure oversampling to 16x (max)
     
-    initialized = true;
-    return initialized;
+    this->initialized = true;
+    return this->initialized;
 }
 
 std::optional<SensorData> BME680Sensor::getData()
 {
-    if (!bme.performReading())
+    if (!bme.performReading() || !this->initialized)
     {
         return std::nullopt;
     }
