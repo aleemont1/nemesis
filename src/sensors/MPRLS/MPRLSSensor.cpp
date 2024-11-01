@@ -1,8 +1,6 @@
 #include "MPRLSSensor.hpp"
 #include "const/config.h"
 
-static bool initialized = false;
-
 MPRLSSensor::MPRLSSensor()
 {
     mprls = Adafruit_MPRLS();
@@ -11,18 +9,21 @@ MPRLSSensor::MPRLSSensor()
 bool MPRLSSensor::init()
 {
     int attempts = 0;
+    uint start = millis();
     while (!mprls.begin() && attempts++ < SENSOR_LOOKUP_MAX_ATTEMPTS)
     {
-        Serial.println("Could not find a valid MPRLS sensor, check wiring!");
-        delay(1000);
+        uint end = millis();
+        if (end - start > SENSOR_LOOKUP_TIMEOUT)
+        {
+            start = millis();
+        }
     }
     if (attempts >= SENSOR_LOOKUP_MAX_ATTEMPTS)
     {
-        return initialized;
+        return this->initialized;
     }
-    Serial.println("MPRLS Sensor initialized successfully");
-    initialized = true;
-    return initialized;
+    this->initialized = true;
+    return this->initialized;
 }
 
 std::optional<SensorData> MPRLSSensor::getData()
