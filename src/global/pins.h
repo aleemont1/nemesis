@@ -8,8 +8,7 @@
  * @copyright Copyright (c) 2024
  * 
  */
-#ifndef PINS_H
-#define PINS_H
+#pragma once
 
 /**
  * @brief I2C STD PIN.
@@ -31,6 +30,11 @@
 #define SD_CS D7 // D7 pin on nano esp32
 
 
+#define LORA_RX 2
+#define LORA_TX 3
+#define LORA_AUX 4
+#define LORA_M0 8
+#define LORA_M1 9
 // Add here some other pin.
 
-#endif // PINS_H
+
