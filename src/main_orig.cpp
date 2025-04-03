@@ -1,4 +1,4 @@
-#include <Wire.h>
+/*#include <Wire.h>
 #include "sensors/ISensor.hpp"
 #include "utils/logger/ILogger.hpp"
 #include "sensors/BME680/BME680Sensor.hpp"
@@ -89,3 +89,4 @@ void loop()
     rocketLogger->clearData();
     delay(1000);
 }
+*/
