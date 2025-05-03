@@ -13,8 +13,11 @@
 #include "sensors/BNO055/BNO055Sensor.hpp"
 #include "sensors/MPRLS/MPRLSSensor.hpp"
 #include "telemetry/LoRa/E220LoRaTransmitter.hpp"
+#include "utils/logger/SD/SD-master.hpp"
 
 ILogger *rocketLogger;
+SD *sdModule;
+
 ISensor *bno055;
 ISensor *mprls1;
 ISensor *mprls2;
@@ -28,6 +31,10 @@ void setup()
 {
     rocketLogger = new RocketLogger();
     rocketLogger->logInfo("Setup started.");
+
+    sdModule = new SD();
+
+    sdModule->init() ? rocketLogger->logInfo("SD card initialized.") : rocketLogger->logError("Failed to initialize SD card.");
 
     loraSerial.begin(SERIAL_BAUD_RATE, SERIAL_8N1, LORA_RX_PIN, LORA_TX_PIN);
     Serial.begin(SERIAL_BAUD_RATE);
@@ -52,6 +59,8 @@ void setup()
     logTransmissionResponse(response);
 
     Serial.write(rocketLogger->getJSONAll().dump(4).c_str());
+    sdModule->writeFile("log.json", rocketLogger->getJSONAll().dump(4));
+    rocketLogger->clearData();
 }
 
 void loop()
@@ -105,6 +114,7 @@ void logTransmitterStatus(ResponseStatusContainer &transmitterStatus)
                                static_cast<E220LoRaTransmitter *>(loraTransmitter)->getConfigurationString(*(Configuration *)(static_cast<E220LoRaTransmitter *>(loraTransmitter)->getConfiguration().data)))
                                   .c_str());
     }
+
 }
 
 // Log data transmission response
