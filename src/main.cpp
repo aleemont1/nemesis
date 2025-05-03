@@ -16,39 +16,21 @@
 #include "utils/logger/SD/SD-master.hpp"
 
 ILogger *rocketLogger;
-ILogger *dataLogger;
 SD *sdModule;
+
 ISensor *bno055;
-ISensor *mprls;
+ISensor *mprls1;
+ISensor *mprls2;
 ITransmitter *loraTransmitter;
 HardwareSerial loraSerial(LORA_SERIAL);
 
-// Struct to store sensor information for initialization and logging
-struct SensorInfo
-{
-    ISensor *sensor;            // Pointer to the sensor object
-    std::string name;           // Name of the sensor
-    std::optional<int> address; // I2C address of the sensor (if applicable)
-};
-
-// Vector of sensors to initialize (add the used sensors here)
-std::vector<SensorInfo> sensors = {
-    // {bme680, "BME680", BME680_I2C_ADDR_1},
-    {mprls, "MPRLS", MPRLS_I2C_ADDR},
-    {bno055, "BNO055", BNO055_I2C_ADDR}};
-
 void logTransmitterStatus(ResponseStatusContainer &transmitterStatus);
 void logTransmissionResponse(ResponseStatusContainer &response);
-void logInitializationResult(const std::string &sensorName, const std::optional<int> &address, bool success);
-bool initSensor(ISensor *sensor, const std::string &name, const std::optional<int> &address);
-void initAllSensorsAndLogStatus();
-
+void tcaSelect(uint8_t bus);
 void setup()
 {
     rocketLogger = new RocketLogger();
     rocketLogger->logInfo("Setup started.");
-
-    dataLogger = new RocketLogger();
 
     sdModule = new SD();
 
@@ -56,23 +38,26 @@ void setup()
 
     loraSerial.begin(SERIAL_BAUD_RATE, SERIAL_8N1, LORA_RX_PIN, LORA_TX_PIN);
     Serial.begin(SERIAL_BAUD_RATE);
-    //! TODO: Delete after testing phase is over.
-    delay(500);
-    // bme680 = new BME680Sensor(BME680_I2C_ADDR_1);
-    mprls = new MPRLSSensor();
-    bno055 = new BNO055Sensor();
-    loraTransmitter = new E220LoRaTransmitter(loraSerial, LORA_AUX, LORA_M0, LORA_M1);
+    Wire.begin();
 
+    tcaSelect(I2C_MULTIPLEXER_MPRLS1);
+    mprls1 = new MPRLSSensor();
+    mprls1->init();
+    tcaSelect(I2C_MULTIPLEXER_MPRLS2);
+    mprls2 = new MPRLSSensor();
+    mprls2->init();
+
+    bno055 = new BNO055Sensor();
+    bno055->init();
+
+    loraTransmitter = new E220LoRaTransmitter(loraSerial, LORA_AUX, LORA_M0, LORA_M1);
     auto transmitterStatus = loraTransmitter->init();
     logTransmitterStatus(transmitterStatus);
-
-    initAllSensorsAndLogStatus();
-
+    rocketLogger->logInfo(static_cast<E220LoRaTransmitter *>(loraTransmitter)->getConfigurationString(*(Configuration *)(static_cast<E220LoRaTransmitter *>(loraTransmitter)->getConfiguration().data)).c_str());
     rocketLogger->logInfo("Setup complete.");
     auto response = loraTransmitter->transmit(rocketLogger->getJSONAll());
     logTransmissionResponse(response);
-    //! TODO: Delete after testing phase is over.
-    delay(2000);
+
     Serial.write(rocketLogger->getJSONAll().dump(4).c_str());
     sdModule->writeFile("log.json", rocketLogger->getJSONAll().dump(4));
     rocketLogger->clearData();
@@ -80,45 +65,31 @@ void setup()
 
 void loop()
 {
-    // Read data from all sensors inside the sensors vector and log it.
-    for (const auto &[sensor, name, address] : sensors)
     {
-        auto data = sensor->getData();
-        if (data.has_value())
+        auto bno055_data = bno055->getData();
+        if (bno055_data.has_value())
         {
-            dataLogger->logSensorData(data.value());
+            rocketLogger->logSensorData(bno055_data.value());
+        }
+
+        tcaSelect(I2C_MULTIPLEXER_MPRLS1);
+        auto mprls1_data = mprls1->getData();
+        if (mprls1_data.has_value())
+        {
+            rocketLogger->logSensorData(mprls1_data.value());
+        }
+
+        tcaSelect(I2C_MULTIPLEXER_MPRLS2);
+        auto mprls2_data = mprls2->getData();
+        if (mprls2_data.has_value())
+        {
+            rocketLogger->logSensorData(mprls2_data.value());
         }
     }
-
-    //! TODO: Test overhead of writing to SD card.
-    //* note: Implement a separate task (thread) for writing to SD card. This will prevent the main loop from blocking.
-    //*         The task should be able to write data to the SD card at a fixed interval (e.g. every 500ms).
-
-    // Write SENSORs data to SD data.json file
-    sdModule->openFile("data.json");
-    sdModule->writeFile("data.json", dataLogger->getJSONAll().dump(4));
-    sdModule->closeFile();
-
-    //* note: Implement a separate task (thread) for transmitting data over LoRa. This will prevent the main loop from blocking.
-    //*         The task should be able to transmit data over LoRa at a fixed interval (e.g. every 500ms).
-    auto response = loraTransmitter->transmit(dataLogger->getJSONAll());
+    auto response = loraTransmitter->transmit(rocketLogger->getJSONAll());
     logTransmissionResponse(response);
-
-    // Write transmission response to SD log.json file
-    sdModule->openFile("log.json");
-    sdModule->writeFile("log.json", rocketLogger->getJSONAll().dump(4));
-    sdModule->closeFile();
-
-    //! TODO: Delete after testing phase is over.
-    Serial.println("################## SENSOR DATA START ####################");
-    Serial.write((dataLogger->getJSONAll().dump(4) + "\n").c_str());
-    Serial.println("################## SENSOR DATA END ######################\n");
-
-    Serial.println("################## LOG INFO START ####################");
     Serial.write((rocketLogger->getJSONAll().dump(4) + "\n").c_str());
-    Serial.println("################## LOG INFO END ######################\n");
-    delay(250);     //! TODO: Delete after testing phase is over.
-    dataLogger->clearData();
+    Serial.println("######################################");
     rocketLogger->clearData();
 }
 
@@ -154,34 +125,10 @@ void logTransmissionResponse(ResponseStatusContainer &response)
         : rocketLogger->logInfo("Data transmitted successfully.");
 }
 
-// Log a sensor initialization status
-void logInitializationResult(const std::string &sensorName, const std::optional<int> &address, bool success)
+// Function to select the TCA9548A multiplexer bus
+void tcaSelect(uint8_t bus)
 {
-    std::string addressInfo = address.has_value() ? " on address " + std::to_string(address.value()) : "";
-
-    if (success)
-    {
-        rocketLogger->logInfo(sensorName + " sensor initialized" + addressInfo);
-    }
-    else
-    {
-        rocketLogger->logError("Failed to initialize " + sensorName + " sensor" + addressInfo);
-    }
-}
-
-// Initialize a sensor
-bool initSensor(ISensor *sensor, const std::string &name, const std::optional<int> &address)
-{
-    bool initSuccess = sensor->init();
-    logInitializationResult(name, address, initSuccess);
-    return initSuccess;
-}
-
-// Initialize the sensors inside the sensors vector and log the initialization status
-void initAllSensorsAndLogStatus()
-{
-    for (const auto &[sensor, name, address] : sensors)
-    {
-        initSensor(sensor, name, address);
-    }
+    Wire.beginTransmission(0x70); // TCA9548A address
+    Wire.write(1 << bus);         // send byte to select bus
+    Wire.endTransmission();
 }
