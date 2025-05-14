@@ -1,4 +1,4 @@
-#include <iostream>
+/*#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -384,9 +384,6 @@ int main() {
         std::vector<float> acc = getAcc(lineNum);           // Get the accelerometer data
         std::vector<float> omega = getOmega(lineNum);       // Get the Angular velocity
 
-        for (auto& value : acc) {
-            value *= 9.81; // Convert to m/s^2
-        }
         accX = acc[0];
         accY = acc[1];
         accZ = acc[2];
@@ -446,14 +443,6 @@ int main() {
         
         lineNum++;  // Move to the next line
 
-        /*
-        for (int i = 0; i < EKF_M; ++i) {
-            for (int j = 0; j < EKF_N; ++j) {
-            std::cout << H[i * EKF_N + j] << " ";
-            }
-            std::cout << std::endl;
-        }*/
-
         std::vector<float> posEKF = { ekf.x[0], ekf.x[1], ekf.x[2] };
         std::vector<float> velEKF = { ekf.x[3], ekf.x[4], ekf.x[5] };
         std::vector<float> accEKF = { ekf.x[6], ekf.x[7], ekf.x[8] };
@@ -465,3 +454,4 @@ int main() {
 
     return 0;
 }
+*/

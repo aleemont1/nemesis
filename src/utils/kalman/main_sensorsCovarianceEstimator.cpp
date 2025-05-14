@@ -2,8 +2,6 @@
  * Temporary code for testing EKF with MPRLS and BNO055 sensors (the real main is main_orig.cpp)
  */
 
- static const uint8_t LM35_PIN = 0;
-
  #include <vector>
  #include <tuple>
  #include "./sensors/MPRLS/MPRLSSensor.hpp"
