@@ -1,68 +1,275 @@
 #include "KalmanFilter.hpp"
-#include <cstring>
 
 KalmanFilter::KalmanFilter() {
-    Q = new float[EKF_N * EKF_N]();
-    R = new float[EKF_M * EKF_M]();
-    F = new float[EKF_N * EKF_N]();
-    H = new float[EKF_M * EKF_N]();
-
     // Q: process noise covariance
-    for (int i = 0; i < EKF_N; i++) {
-        for (int j = 0; j < EKF_N; j++) {
-            Q[i * EKF_N + j] = (i == j) ? EPSILON : 0.0f;
-            F[i * EKF_N + j] = (i == j) ? 1.0f : 0.0f;
-        }
-    }
+    const float Q_diag[EKF_N] = {
+        P0, P0, P0,
+        V0, V0, V0,
+        q_a, q_a, q_a, q_a,
+        b_a, b_a, b_a,
+        b_g, b_g, b_g
+    };
+
     // R: measurement noise covariance
-    for (int i = 0; i < EKF_M; i++) {
-        for (int j = 0; j < EKF_M; j++) {
-            R[i * EKF_M + j] = (i == j) ? EPSILON : 0.0f;
-        }
-    }
-    // H: measurement Jacobian (direct observation)
-    for (int i = 0; i < EKF_M; i++) {
-        for (int j = 0; j < EKF_M; j++) {
-            H[i * EKF_N + j] = (i == j) ? 1.0f : 0.0f;
-        }
-    }
+    const float R[EKF_M*EKF_M] = {
+        A0, 0, 0, 0, 0, 0,
+        0, A0, 0, 0, 0, 0,
+        0, 0, A0, 0, 0, 0,
+        0, 0, 0, G0, 0, 0,
+        0, 0, 0, 0, G0, 0,
+        0, 0, 0, 0, 0, G0
+    
+    };
 
-    auto Pdiag = new float[EKF_N];
-    for (int i = 0; i < EKF_N; i++) {
-        Pdiag[i] = EPSILON;
-    }
+    // Initially, the acceleration is constantly zero, so it won't change
+    const float H[EKF_M*EKF_N] = {
+        
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    };
 
-    ekf_initialize(&_ekf, Pdiag);
-}
+    ekf_initialize(&ekf, Q_diag);
 
-void KalmanFilter::step(const float* z, float delta_t) {
-    // predicted state
-    float fx[EKF_N];
+    // Position
+    ekf.x[0] = 0;
+    ekf.x[1] = 0;
+    ekf.x[2] = 0;
 
-    std::memcpy(fx, _ekf.x, EKF_N * sizeof(float));
+    // Velocity
+    ekf.x[3] = 0;
+    ekf.x[4] = 0;
+    ekf.x[5] = 0;
 
-    // Basic kinematic prediction for position
-    fx[0] += _ekf.x[7] * delta_t + 0.5f * _ekf.x[4] * delta_t * delta_t;
-    fx[1] += _ekf.x[8] * delta_t + 0.5f * _ekf.x[5] * delta_t * delta_t;
-    fx[2] += _ekf.x[9] * delta_t + 0.5f * _ekf.x[6] * delta_t * delta_t;
-
-    fx[3] += _ekf.x[4] * delta_t;
-    fx[4] += _ekf.x[5] * delta_t;
-    fx[5] += _ekf.x[6] * delta_t;
-
-    // Prediction step
-    ekf_predict(&_ekf, fx, F, Q);
-
-    // Measurement prediction (direct: hx = x)
-    float hx[EKF_M];
-    for (int i = 0; i < EKF_M; i++) {
-        hx[i] = _ekf.x[i];
-    }
-
-    // Update step with measurement z
-    ekf_update(&_ekf, const_cast<float*>(z), hx, H, R);
+    // Quaternion: received from calibration phase
+    ekf.x[6] = 0.9541;
+    ekf.x[7] = -0.0571;
+    ekf.x[8] = 0.2734;
+    ekf.x[9] = -0.1079;
+    
+    // Accel Bias
+    ekf.x[10] = 0.01;
+    ekf.x[11] = 0.01;
+    ekf.x[12] = 0.01;
+    
+    // Gyro Bias
+    ekf.x[13] = 0.01;
+    ekf.x[14] = 0.01;
+    ekf.x[15] = 0.01;
 }
 
 float* KalmanFilter::state() {
-    return _ekf.x;
+    return ekf.x;
 }
+
+Eigen::Vector3f KalmanFilter::rotateToBody(const Eigen::Quaternionf& q, const Eigen::Vector3f& vec_world) {
+    return q.conjugate() * vec_world;  // Equivalent to R^T * vec
+}
+
+Eigen::Matrix<float, 3, 4> KalmanFilter::computeHqAccelJacobian(const Eigen::Quaternionf& q_nominal, const Eigen::Vector3f& accel_world, float epsilon)
+{
+    Eigen::Matrix<float, 3, 4> H;
+    Eigen::Vector4f q_vec = q_nominal.coeffs();  // (x, y, z, w)
+
+    for (int i = 0; i < 4; ++i) {
+        Eigen::Vector4f dq = Eigen::Vector4f::Zero();
+        dq(i) = epsilon;
+
+        // Perturb positively
+        Eigen::Vector4f q_plus_vec = q_vec + dq;
+        Eigen::Quaternionf q_plus(q_plus_vec(3), q_plus_vec(0), q_plus_vec(1), q_plus_vec(2));
+        q_plus.normalize();
+
+        // Perturb negatively
+        Eigen::Vector4f q_minus_vec = q_vec - dq;
+        Eigen::Quaternionf q_minus(q_minus_vec(3), q_minus_vec(0), q_minus_vec(1), q_minus_vec(2));
+        q_minus.normalize();
+
+        // Rotate vector under perturbed quaternions
+        Eigen::Vector3f a_plus = rotateToBody(q_plus, accel_world);
+        Eigen::Vector3f a_minus = rotateToBody(q_minus, accel_world);
+
+        // Central difference
+        H.col(i) = (a_plus - a_minus) / (2.0f * epsilon);
+    }
+
+    return H;  // size 3x4
+}
+
+std::vector<std::vector<float>> KalmanFilter::step(float dt, float omega[3], float accel[3]) {
+    Eigen::Vector3f accel_z(accel[0], accel[1], accel[2]);
+    
+    // Conversion to rad/s
+    float omega_x = omega[0]*(float)M_PI/180.0f;
+    float omega_y = omega[1]*(float)M_PI/180.0f;
+    float omega_z = omega[2]*(float)M_PI/180.0f;
+
+    float fx[EKF_N] = {0};
+    float hx[EKF_M] = {0};
+
+    // Biases
+    Eigen::Vector3f bias_a(ekf.x[10], ekf.x[11], ekf.x[12]);
+    Eigen::Vector3f bias_g(ekf.x[13], ekf.x[14], ekf.x[15]);
+
+    // Update quaternion
+    // omega = [wx, wy, wz] in rad/s
+    Eigen::Vector3f omega_eigen(omega_x - bias_g[0], omega_y - bias_g[1], omega_z - bias_g[2]);
+    Eigen::Vector3f axis = omega_eigen.normalized();
+    float theta = omega_eigen.norm() * dt;
+    Eigen::Quaternionf delta_q(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
+
+    Eigen::Quaternionf q_nominal(ekf.x[6], ekf.x[7], ekf.x[8], ekf.x[9]);
+    Eigen::Quaternionf q_rot =  q_nominal * delta_q;
+    q_rot.normalize();
+    
+    Eigen::Vector3f accel_abs = q_rot * (accel_z - bias_a) - gravity;  // Equivalent to q * a * q.inverse()
+
+    Eigen::Matrix<float,3,4> Hq = computeHqAccelJacobian(
+        Eigen::Quaternionf(ekf.x[6], ekf.x[7], ekf.x[8], ekf.x[9]),
+        Eigen::Vector3f(accel_abs[0], accel_abs[1], accel_abs[2])
+    );    
+
+    float H[EKF_M*EKF_N] = {
+        0, 0, 0, 0, 0, 0, Hq(0,0), Hq(0,1), Hq(0,2), Hq(0,3), 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, Hq(1,0), Hq(1,1), Hq(1,2), Hq(1,3), 0, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, Hq(2,0), Hq(2,1), Hq(2,2), Hq(2,3), 0, 0, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    };
+
+    // F: state transition Jacobian
+    float F[EKF_N*EKF_N] = {
+        1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 0, 0, dt, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    
+        0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+    
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    
+    };
+
+    // Set the observation vector z
+    float z[EKF_M] = {accel[0], accel[1], accel[2], omega_x, omega_y, omega_z};
+
+    run_model(dt, fx, hx, omega_x, omega_y, omega_z, accel);
+    
+    // I have Q_diag, but Q shouldn't be diagonal for the fun
+    ekf_predict(&ekf, fx, F, Q_diag);
+
+    ekf_update(&ekf, z, hx, H, R);
+
+    std::vector<float> posEKF = { ekf.x[0], ekf.x[1], ekf.x[2] };
+    std::vector<float> velEKF = { ekf.x[3], ekf.x[4], ekf.x[5] };
+    std::vector<float> accEKF = { ekf.x[6], ekf.x[7], ekf.x[8] };
+    
+    std::vector<std::vector<float>> result = {posEKF, velEKF, accEKF};
+
+    return result;
+}
+
+void KalmanFilter::run_model(float dt, float fx[EKF_N], float hx[EKF_M], float omega_x, float omega_y, float omega_z, float accel_z[3]) {
+    // Biases
+    Eigen::Vector3f bias_a(ekf.x[10], ekf.x[11], ekf.x[12]);
+    Eigen::Vector3f bias_g(ekf.x[13], ekf.x[14], ekf.x[15]);
+
+    // Update quaternion
+    // omega = [wx, wy, wz] in rad/s
+    Eigen::Vector3f omega_eigen(omega_x - bias_g[0], omega_y - bias_g[1], omega_z - bias_g[2]);
+    float theta = omega_eigen.norm() * dt;
+    Eigen::Vector3f axis = omega_eigen.normalized();
+    Eigen::Quaternionf delta_q(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
+    Eigen::Quaternionf q_nominal(ekf.x[6], ekf.x[7], ekf.x[8], ekf.x[9]);
+    Eigen::Quaternionf q_rot =  q_nominal * delta_q;
+    q_rot.normalize();
+
+    Eigen::Vector3f acc_body(accel_z[0], accel_z[1], accel_z[2]);
+    Eigen::Vector3f accel_abs = q_rot * (acc_body - bias_a) + gravity;  // Equivalent to q * a * q.inverse()
+
+    // Position
+    fx[0] = (float)(ekf.x[0] + ekf.x[3]*dt);
+    fx[1] = (float)(ekf.x[1] + ekf.x[4]*dt);
+    fx[2] = (float)(ekf.x[2] + ekf.x[5]*dt);
+    
+    // Velocities
+    fx[3] = (float)(ekf.x[3] + accel_abs[0]*dt);
+    fx[4] = (float)(ekf.x[4] + accel_abs[1]*dt);
+    fx[5] = (float)(ekf.x[5] + accel_abs[2]*dt);
+
+    // Quaternion
+    fx[6] = q_rot.w();
+    fx[7] = q_rot.x();
+    fx[8] = q_rot.y();
+    fx[9] = q_rot.z();
+
+    // Define the noise standard deviations for each bias component
+    // These values would typically be based on the sensor's datasheet or empirically determined
+    const float accel_bias_stddev = 0.000001f;  // Acceleration bias noise (e.g., 1 mG)
+    const float gyro_bias_stddev = 0.000001f*(float)M_PI/180;   // Gyroscope bias noise (e.g., 0.1 deg/s)
+
+    std::default_random_engine generator;  // Random number generator
+    std::normal_distribution<float> accel_noise(0.0, accel_bias_stddev);  // Gaussian noise for accelerometer bias
+    std::normal_distribution<float> gyro_noise(0.0, gyro_bias_stddev);   // Gaussian noise for gyro bias
+
+    // Now we apply the noise to the bias components
+    // Accel Bias (BNO055 accelerometer)
+    fx[10] = (float)(ekf.x[10]) + accel_noise(generator);  // X-axis accel bias with noise
+    fx[11] = (float)(ekf.x[11]) + accel_noise(generator);  // Y-axis accel bias with noise
+    fx[12] = (float)(ekf.x[12]) + accel_noise(generator);  // Z-axis accel bias with noise
+
+    // Gyro Bias (BNO055 gyroscope)
+    fx[13] = (float)(ekf.x[13]) + gyro_noise(generator);   // X-axis gyro bias with noise
+    fx[14] = (float)(ekf.x[14]) + gyro_noise(generator);   // Y-axis gyro bias with noise
+    fx[15] = (float)(ekf.x[15]) + gyro_noise(generator);   // Z-axis gyro bias with noise
+
+    // Measurements
+    // Here we have to put the expected measurements of the acceleration /Review for future updates
+    hx[0] = accel_z[0] + bias_a[0];
+    hx[1] = accel_z[1] + bias_a[1];
+    hx[2] = accel_z[2] + bias_a[2];
+    hx[3] = omega_x + bias_g[0];
+    hx[4] = omega_y + bias_g[1];
+    hx[5] = omega_z + bias_g[2];
+}
+
+// NEVER USED?? !!!
+void KalmanFilter::computeJacobianF_tinyEKF(float dt, float omega_x, float omega_y, float omega_z, float accel_z[3], float F_out[EKF_N * EKF_N]) {
+    const float epsilon = 1e-5f;
+    float fx_base[EKF_N];
+    float hx_dummy[EKF_M]; // Not used
+    std::vector<float> original_state(ekf.x, ekf.x + EKF_N);
+
+    run_model(dt, fx_base, hx_dummy, omega_x, omega_y, omega_z, accel_z);
+
+    for (int i = 0; i < EKF_N; ++i) {
+        // Perturb state
+        ekf.x[i] += epsilon;
+
+        float fx_perturbed[EKF_N];
+        run_model(dt, fx_perturbed, hx_dummy, omega_x, omega_y, omega_z, accel_z);
+
+        for (int j = 0; j < EKF_N; ++j) {
+            F_out[j * EKF_N + i] = (fx_perturbed[j] - fx_base[j]) / epsilon;
+        }
+
+        ekf.x[i] = original_state[i]; // Restore original state
+    }
+}
+
