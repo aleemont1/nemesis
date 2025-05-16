@@ -1,25 +1,29 @@
 #ifndef KALMANFILTER_HPP
 #define KALMANFILTER_HPP
 
+// Macros needed for a conflict between similar macro variables names of Arduino.h and Eigen.h
+#ifdef B1
+#undef B1
+#endif
+#ifdef B2
+#undef B2
+#endif
+#ifdef B3
+#undef B3
+#endif
+#ifdef B0
+#undef B0
+#endif
+
 #define EKF_N 16 // Size of state space [3-positions, 3-velocities, 3-accelerations, 4-quaternion_rot] 
 #define EKF_M 6 // Size of observation (measurement) space [3-positions, 3-accelerations, 4-quaternion_rot]
 
 #include <tinyekf.h>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <stdio.h>
-#include <string.h>
-#include <string>
-#include <stdlib.h>
-#include <math.h>
 #include <cmath>
-#include <cstdint>
-#include <cstring>
+#include <math.h>
+#include <stdlib.h>
 #include <random>
-#include "../../../lib/eigen-master/Eigen/Geometry"
-#include "../../../lib/eigen-master/Eigen/Dense"
+#include <ArduinoEigen.h>
 
 // These vectors should be put private iside of the class
 static float Q_diag[EKF_N];  // Process noise covariance
