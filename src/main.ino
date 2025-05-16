@@ -1,10 +1,10 @@
 /***
  * Temporary code for testing EKF with MPRLS and BNO055 sensors (the real main is main_orig.cpp)
  */
+
+/*
 #define EKF_N 24
 #define EKF_M 24
-
-static const uint8_t LM35_PIN = 0;
 
 #include <tinyekf.h>
 #include <vector>
@@ -274,3 +274,4 @@ void loop()
 
     delay(1000);
 }
+*/

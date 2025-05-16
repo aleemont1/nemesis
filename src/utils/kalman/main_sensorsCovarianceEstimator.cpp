@@ -1,12 +1,8 @@
-/***
- * Temporary code for testing EKF with MPRLS and BNO055 sensors (the real main is main_orig.cpp)
- */
-
+/*
  #include <vector>
  #include <tuple>
  #include "./sensors/MPRLS/MPRLSSensor.hpp"
  #include "./sensors/BNO055/BNO055Sensor.hpp"
- #include "./utils/kalman/KalmanFilter.hpp"
  
  // Elements needed to update the kalman filter
  unsigned long lastTime = 0;
@@ -321,3 +317,4 @@
     }
      delay(100);
  }
+     */
