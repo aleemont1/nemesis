@@ -169,11 +169,11 @@ struct bno055_accel_float_t BNO055SensorInterface::get_accel() {
     struct bno055_accel_t accel;
     
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_accel_xyz(&accel);
+    /*bool res = */bno055_read_accel_xyz(&accel);
     
     // Conversion from raw to meterpersecseq
     struct bno055_accel_float_t accel_msq;
-    bool res2 = bno055_convert_float_accel_xyz_msq(&accel_msq);
+    /*bool res2 = */bno055_convert_float_accel_xyz_msq(&accel_msq);
     
     return accel_msq;
 }
@@ -182,11 +182,11 @@ struct bno055_mag_float_t BNO055SensorInterface::get_mag() {
     struct bno055_mag_t mag;
 
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_mag_xyz(&mag);
+    /*bool res = */bno055_read_mag_xyz(&mag);
 
     // Conversion from raw to microtesla
     struct bno055_mag_float_t mag_mt;
-    bool res2 = bno055_convert_float_mag_xyz_uT(&mag_mt);
+    /*bool res2 = */bno055_convert_float_mag_xyz_uT(&mag_mt);
 
     return mag_mt;
 }
@@ -195,11 +195,11 @@ struct bno055_gyro_float_t BNO055SensorInterface::get_gyro_dps() {
     struct bno055_gyro_t gyro;
 
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_gyro_xyz(&gyro);
+    /*bool res = */bno055_read_gyro_xyz(&gyro);
 
     // Conversion from raw to degrees per second (dps)
     struct bno055_gyro_float_t gyro_dps;
-    bool res2 = bno055_convert_float_gyro_xyz_dps(&gyro_dps);
+    /*bool res2 = */bno055_convert_float_gyro_xyz_dps(&gyro_dps);
 
     return gyro_dps;
 }
@@ -208,11 +208,11 @@ struct bno055_gyro_float_t  BNO055SensorInterface::get_gyro_rps() {
     struct bno055_gyro_t gyro;
 
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_gyro_xyz(&gyro);
+    /*bool res = */bno055_read_gyro_xyz(&gyro);
 
     // Conversion from raw to radians per second (rps)
     struct bno055_gyro_float_t gyro_rps;
-    bool res2 = bno055_convert_float_gyro_xyz_rps(&gyro_rps);
+    /*bool res2 = */bno055_convert_float_gyro_xyz_rps(&gyro_rps);
 
     return gyro_rps;
 }
@@ -221,11 +221,11 @@ struct bno055_euler_float_t BNO055SensorInterface::get_euler_deg() {
     struct bno055_euler_t euler;
 
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_euler_hrp(&euler);
+    /*bool res = */bno055_read_euler_hrp(&euler);
 
     // Conversion from raw to degrees
     struct bno055_euler_float_t euler_deg;
-    bool res2 = bno055_convert_float_euler_hpr_deg(&euler_deg);
+    /*bool res2 = */bno055_convert_float_euler_hpr_deg(&euler_deg);
 
     return euler_deg;
 }
@@ -234,11 +234,11 @@ struct bno055_euler_float_t BNO055SensorInterface::get_euler_rad() {
     struct bno055_euler_t euler;
     
     // The function return a boolean value indicating success or failure
-    bool res = bno055_read_euler_hrp(&euler);
+    /*bool res = */bno055_read_euler_hrp(&euler);
 
     // Conversion from raw to radians
     struct bno055_euler_float_t euler_rad;
-    bool res2 = bno055_convert_float_euler_hpr_rad(&euler_rad);
+    /*bool res2 = */bno055_convert_float_euler_hpr_rad(&euler_rad);
 
     return euler_rad;
 }
@@ -246,7 +246,7 @@ struct bno055_euler_float_t BNO055SensorInterface::get_euler_rad() {
 struct bno055_quaternion_t BNO055SensorInterface::get_quaternion() {
     struct bno055_quaternion_t quaternion;
     
-    bool res = bno055_read_quaternion_wxyz(&quaternion);
+    /*bool res = */bno055_read_quaternion_wxyz(&quaternion);
 
     return quaternion;
 }
@@ -254,11 +254,11 @@ struct bno055_quaternion_t BNO055SensorInterface::get_quaternion() {
 struct bno055_linear_accel_t BNO055SensorInterface::get_linear_accel() {
     struct bno055_linear_accel_t linear_accel;
     
-    bool res = bno055_read_linear_accel_xyz(&linear_accel);
+    /*bool res = */bno055_read_linear_accel_xyz(&linear_accel);
 
     // Conversion from raw to meter per second squared (m/s^2)
     struct bno055_linear_accel_float_t linear_accel_msq;
-    bool res2 = bno055_convert_float_linear_accel_xyz_msq(&linear_accel_msq);
+    /*bool res2 = */bno055_convert_float_linear_accel_xyz_msq(&linear_accel_msq);
 
     return linear_accel;
 }
@@ -266,11 +266,11 @@ struct bno055_linear_accel_t BNO055SensorInterface::get_linear_accel() {
 struct bno055_gravity_t BNO055SensorInterface::get_gravity() {
     struct bno055_gravity_t gravity;
     
-    bool res = bno055_read_gravity_xyz(&gravity);
+    /*bool res = */bno055_read_gravity_xyz(&gravity);
 
     // Conversion from raw to meter per second squared (m/s^2)
     struct bno055_gravity_float_t gravity_msq;
-    bool res2 = bno055_convert_float_gravity_xyz_msq(&gravity_msq);
+    /*bool res2 = */bno055_convert_float_gravity_xyz_msq(&gravity_msq);
 
     return gravity;
 }
@@ -279,7 +279,7 @@ struct bno055_gravity_t BNO055SensorInterface::get_gravity() {
 float BNO055SensorInterface::get_temperature() {
     int8_t raw_temp = 0;
     
-    bool res = (bno055_read_temp_data(&raw_temp) == BNO055_SUCCESS);
+    /*bool res = */(bno055_read_temp_data(&raw_temp) == BNO055_SUCCESS);
     
     // Conversion: 1 LSB = 1°C, so just cast to float
     return static_cast<float>(raw_temp);
