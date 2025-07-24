@@ -1,6 +1,3 @@
-void setup() {}
-void loop() {}
-
 /***
  * Temporary code for testing EKF with MPRLS and BNO055 sensors (the real main is main_orig.cpp)
  */
