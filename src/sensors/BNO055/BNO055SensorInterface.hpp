@@ -13,8 +13,8 @@ class BNO055SensorInterface
 {
 private:
     bno055_t bno;
-    
-public:
+
+public:    
     /**
      * @brief Default constructor for BNO055SensorInterface, the actual sensor structure will be initialized in init()
      */
@@ -28,36 +28,36 @@ public:
     
     /**
      * @brief Check if all sensor components are calibrated
-     * @return true if all sensors (accel, mag, gyro, system) are calibrated, false otherwise
+     * @return the minimum calibration value among all sensors (accel, mag, gyro, system), from 0 (not calibrated) to 3 (fully calibrated)
      */
-    bool calibrate();
+    int calibrate();
     
     // ========== INDIVIDUAL CALIBRATION FUNCTIONS ==========
     /**
      * @brief Check accelerometer calibration status
-     * @return true if accelerometer is calibrated (calibration level > 0), false otherwise
+     * @return the calibration value of the accelerometer, from 0 (not calibrated) to 3 (fully calibrated)
      */
-    bool calibrate_accel();
+    int calibrate_accel();
     
     /**
      * @brief Check magnetometer calibration status
-     * @return true if magnetometer is calibrated (calibration level > 0), false otherwise
-     * @note Magnetometer calibration typically requires figure-8 movements
+     * @return the calibration value of the magnetometer, from 0 (not calibrated) to 3 (fully calibrated)
+     * @note Magnetometer calibration typically requires figure-8 movements !!! Look for how to start the actual calibration
      */
-    bool calibrate_mag();
+    int calibrate_mag();
     
     /**
      * @brief Check gyroscope calibration status
-     * @return true if gyroscope is calibrated (calibration level > 0), false otherwise
+     * @return the calibration value of the gyroscope, from 0 (not calibrated) to 3 (fully calibrated)
      * @note Gyroscope calibration requires the sensor to remain stationary
      */
-    bool calibrate_gyro();
+    int calibrate_gyro();
     
     /**
      * @brief Check system-wide calibration status
      * @return true if system calibration is complete (calibration level > 0), false otherwise
      */
-    bool calibrate_sys();
+    int calibrate_sys();
     
     // ========== SELF-TEST FUNCTIONS ==========
     /**
