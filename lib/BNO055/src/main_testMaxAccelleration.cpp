@@ -9,17 +9,9 @@ void setup()
     Serial.begin(115200);
     
     if (!bno.init()) {
-        Serial.println("Failed to initialize BNO055");
-        while(1);
-    }
-    
-    // Verify we're in NDOF mode
-    uint8_t mode = bno.setOperationMode(0x0C); // OPERATION_MODE_NDOF = 0x0C
-    
-    if (mode == 0x0C) {
-        Serial.println("BNO055 is in NDOF mode - OK");
-    } else {
-        Serial.println("WARNING: BNO055 is NOT in NDOF mode");
+        while(1) {
+            Serial.println("Failed to initialize BNO055");
+        }
     }
 }
  
