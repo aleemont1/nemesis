@@ -99,9 +99,11 @@ private:
     bool isCalibrationComplete();
     bool isSystemReady();
     bool isLaunchDetected();
+    bool isLiftoffStarted();
     bool isAccelerationPhaseComplete();
     bool isBallisticPhaseComplete();
     bool isApogeeReached();
+    bool isDrogueReady();
     bool isStabilizationComplete();
     bool isDecelerationComplete();
     bool isLandingComplete();

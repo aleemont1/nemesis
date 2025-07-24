@@ -119,13 +119,13 @@ void RocketFSM::setupTransitions()
     transitions.emplace_back(RocketState::READY_FOR_LAUNCH, RocketState::LAUNCH, [this]()
                              { return isLaunchDetected(); });
     transitions.emplace_back(RocketState::LAUNCH, RocketState::ACCELERATED_FLIGHT, [this]()
-                             { return millis() - stateStartTime > 100; }); // Transition after 100ms of launch, //!TODO: to be refactored with a configurable parameter
+                             { return isLiftoffStarted(); });
     transitions.emplace_back(RocketState::ACCELERATED_FLIGHT, RocketState::BALLISTIC_FLIGHT, [this]()
                              { return isAccelerationPhaseComplete(); });
     transitions.emplace_back(RocketState::BALLISTIC_FLIGHT, RocketState::APOGEE, [this]()
                              { return isApogeeReached(); });
     transitions.emplace_back(RocketState::APOGEE, RocketState::STABILIZATION, [this]()
-                             { return millis() - stateStartTime > 300; }); // Open drogue after 300ms, //!TODO: to be refactored with a configurable parameter
+                             { return isDrogueReady(); }); 
     transitions.emplace_back(RocketState::STABILIZATION, RocketState::DECELERATION, [this]()
                              { return isStabilizationComplete(); });
     transitions.emplace_back(RocketState::DECELERATION, RocketState::LANDING, [this]()
@@ -158,8 +158,10 @@ void RocketFSM::transitionTo(RocketState newState)
 
 void RocketFSM::checkTransitions()
 {
-    for (const auto& transition : transitions) {
-        if(transition.fromState == currentState && transition.condition()) {
+    for (const auto &transition : transitions)
+    {
+        if (transition.fromState == currentState && transition.condition())
+        {
             transitionTo(transition.toState);
             break; // One transition per update cycle
         }
@@ -245,6 +247,11 @@ bool RocketFSM::isLaunchDetected()
     return false;
 }
 
+bool RocketFSM::isLiftoffStarted()
+{
+    return millis() - stateStartTime > 100; // Detect liftoff after 100ms from launch (previous condition satisfied) //!TODO: to be refactored with a configurable parameter
+}
+
 bool RocketFSM::isAccelerationPhaseComplete()
 {
     return false;
@@ -258,6 +265,11 @@ bool RocketFSM::isBallisticPhaseComplete()
 bool RocketFSM::isApogeeReached()
 {
     return false;
+}
+
+bool RocketFSM::isDrogueReady()
+{
+    return millis() - stateStartTime > 300; // Open drogue after 300ms, //!TODO: to be refactored with a configurable parameter
 }
 
 bool RocketFSM::isStabilizationComplete()
