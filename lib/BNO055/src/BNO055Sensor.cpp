@@ -38,6 +38,20 @@ bool BNO055Sensor::init()
     return this->isInitialized();
 }
 
+uint8_t BNO055Sensor::setOperationMode(uint8_t mode)
+{
+    if (!this->isInitialized())
+    {
+        return 0;
+    }
+    
+    bno055.setMode(static_cast<adafruit_bno055_opmode_t>(mode));
+
+    // Return the current operation mode
+    adafruit_bno055_opmode_t gno055 = bno055.getMode();
+    return static_cast<uint8_t>(gno055);
+}
+
 std::optional<SensorData> BNO055Sensor::getData()
 {
     if (!this->isInitialized())

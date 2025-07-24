@@ -9,6 +9,7 @@ public:
     BNO055Sensor();
     bool init() override;    
     bool calibrate();
+    uint8_t setOperationMode(uint8_t mode);
     std::optional<SensorData> getData() override;
 
 private:
