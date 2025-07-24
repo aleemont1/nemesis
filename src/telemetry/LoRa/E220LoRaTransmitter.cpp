@@ -132,7 +132,7 @@ ResponseStatusContainer E220LoRaTransmitter::transmit(TransmitDataType data)
         auto rc = this->transmitter.sendFixedMessage(LORA_RECEIVER_ADDH, LORA_RECEIVER_ADDL, LORA_CHANNEL,
                                                      &packet, sizeof(Packet));
         /* Delay per evitare collisioni (perdita di pacchetti),
-            empiricamente il minimo è 30ms a distanza ravvicinata. */
+            empiricamente il minimo è 10ms. */
         delay(10);
 
         if (rc.code != E220_SUCCESS)
