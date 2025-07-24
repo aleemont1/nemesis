@@ -1,7 +1,9 @@
 #ifndef BNO055_SENSOR_INTERFACE_HPP
 #define BNO055_SENSOR_INTERFACE_HPP
 
-#include "../lib/BNO055_SensorAPI/bno055.h"
+extern "C" {
+  #include "bno055.h"
+}
 #include "sensors/ISensor.hpp"
 
 // !!! Errors given by the BNO APIs should be managed, maybe with a Publisher-Subscriber pattern?
