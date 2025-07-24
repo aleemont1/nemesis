@@ -1,4 +1,4 @@
-#include "BNO055SensorInterface.h"
+#include "BNO055SensorInterface.hpp"
 #include "const/config.h"
 
 BNO055SensorInterface::BNO055SensorInterface() {}
@@ -8,51 +8,46 @@ bool BNO055SensorInterface::init()
     return bno055_init(&bno) == BNO055_SUCCESS;
 }
 
-bool BNO055SensorInterface::calibrate()
-{    
-    // Check calibration status for all components
-    return (calibrate_accel() && calibrate_mag() && 
-            calibrate_gyro() && calibrate_sys());
+int BNO055SensorInterface::calibrate()
+{
+    // Return the minimum calibration value between all the sensors
+    return (std::min({calibrate_accel(), calibrate_mag(), calibrate_gyro(), calibrate_sys()}));
 }
 
-bool BNO055SensorInterface::calibrate_accel() {
+int BNO055SensorInterface::calibrate_accel() {
     uint8_t accel_calib = 0;
     
     // Get current accelerometer calibration status from BNO055 registers
-    bool success = (bno055_get_accel_calib_stat(&accel_calib) == BNO055_SUCCESS);
+    /*bool success = */(bno055_get_accel_calib_stat(&accel_calib) == BNO055_SUCCESS);
     
-    // Return true if read was successful and accelerometer has some calibration
-    return (success && accel_calib > 0);
+    return accel_calib;
 }
 
-bool BNO055SensorInterface::calibrate_mag() {
+int BNO055SensorInterface::calibrate_mag() {
     uint8_t mag_calib = 0;
     
     // Get current magnetometer calibration status from BNO055 registers
-    bool success = (bno055_get_mag_calib_stat(&mag_calib) == BNO055_SUCCESS);
+    /*bool success = */(bno055_get_mag_calib_stat(&mag_calib) == BNO055_SUCCESS);
     
-    // Return true if read was successful and magnetometer has some calibration
-    return (success && mag_calib > 0);
+    return mag_calib;
 }
 
-bool BNO055SensorInterface::calibrate_gyro() {
+int BNO055SensorInterface::calibrate_gyro() {
     uint8_t gyro_calib = 0;
     
     // Get current gyroscope calibration status from BNO055 registers
-    bool success = (bno055_get_gyro_calib_stat(&gyro_calib) == BNO055_SUCCESS);
+    /*bool success = */(bno055_get_gyro_calib_stat(&gyro_calib) == BNO055_SUCCESS);
     
-    // Return true if read was successful and gyroscope has some calibration
-    return (success && gyro_calib > 0);
+    return gyro_calib;
 }
 
-bool BNO055SensorInterface::calibrate_sys() {
+int BNO055SensorInterface::calibrate_sys() {
     uint8_t sys_calib = 0;
     
     // Get current system calibration status from BNO055 registers
-    bool success = (bno055_get_sys_calib_stat(&sys_calib) == BNO055_SUCCESS);
+    /*bool success = */(bno055_get_sys_calib_stat(&sys_calib) == BNO055_SUCCESS);
     
-    // Return true if read was successful and system has some calibration
-    return (success && sys_calib > 0);
+    return sys_calib;
 }
 
 bool BNO055SensorInterface::selftest_accel() {
