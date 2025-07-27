@@ -10,21 +10,31 @@ bool BNO055Sensor::init()
     int attempts = 0;
     uint start = millis();
     bool initialized = false;
+    
     while (attempts++ < SENSOR_LOOKUP_MAX_ATTEMPTS) {
+        
         if (bno_interface.init()) {
             if (bno_interface.set_operation_mode(BNO055_OPERATION_MODE_NDOF)) {
                 initialized = true;
                 break;
+            } else {
+                return false;
             }
+        } else {
+            return false;
         }
+        
         uint end = millis();
         while (end - start < SENSOR_LOOKUP_TIMEOUT) {
             end = millis();
         }
+        start = millis();
     }
+    
     if (!initialized) {
         return false;
     }
+    
     this->calibrate();
     this->setInitialized(true);
     return true;

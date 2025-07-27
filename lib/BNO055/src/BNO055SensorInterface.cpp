@@ -1,10 +1,67 @@
 #include "BNO055SensorInterface.hpp"
 
+// I2C communication functions for BNO055 low-level API
+s8 BNO055SensorInterface::BNO055_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+    Wire.beginTransmission(dev_addr);
+    Wire.write(reg_addr);
+    for (u8 i = 0; i < cnt; i++) {
+        Wire.write(reg_data[i]);
+    }
+    u8 result = Wire.endTransmission();
+    return (result == 0) ? BNO055_SUCCESS : BNO055_ERROR;
+}
+
+s8 BNO055SensorInterface::BNO055_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+    Wire.beginTransmission(dev_addr);
+    Wire.write(reg_addr);
+    u8 result = Wire.endTransmission();
+    if (result != 0) {
+        return BNO055_ERROR;
+    }
+    
+    Wire.requestFrom(dev_addr, cnt);
+    u8 i = 0;
+    while (Wire.available() && i < cnt) {
+        reg_data[i] = Wire.read();
+        i++;
+    }
+    
+    return (i == cnt) ? BNO055_SUCCESS : BNO055_ERROR;
+}
+
+void BNO055SensorInterface::BNO055_delay_msek(u32 msek)
+{
+    delay(msek);
+}
+
 BNO055SensorInterface::BNO055SensorInterface() {}
 
 bool BNO055SensorInterface::init()
 {
-    return bno055_init(&bno) == BNO055_SUCCESS;
+    // Initialize I2C communication
+    Wire.begin();
+    
+    // Set up the BNO055 structure with I2C communication functions
+    bno.dev_addr = BNO055_I2C_ADDR;
+    bno.bus_write = &BNO055SensorInterface::BNO055_I2C_bus_write;
+    bno.bus_read = &BNO055SensorInterface::BNO055_I2C_bus_read;
+    bno.delay_msec = &BNO055SensorInterface::BNO055_delay_msek;
+
+    // Initialize the sensor
+    if (bno055_init(&bno) != BNO055_SUCCESS) {
+        return false;
+    }
+    
+    // Set power mode to normal
+    if (bno055_set_power_mode(BNO055_POWER_MODE_NORMAL) != BNO055_SUCCESS) {
+        return false;
+    }
+    
+    delay(50);
+    
+    return true;
 }
 
 uint8_t BNO055SensorInterface::check_calibration()

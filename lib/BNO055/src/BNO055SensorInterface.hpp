@@ -4,18 +4,27 @@
 extern "C" {
   #include "bno055.h"
 }
-#include <ISensor.hpp>
 #include <config.h>
+#include <Wire.h>
+#include <Arduino.h>
+
+// I2C communication functions are now private static members of BNO055SensorInterface
 
 // !!! Errors given by the BNO APIs should be managed, maybe with a Publisher-Subscriber pattern?
 
 /**
  * @brief Interface for BNO055 sensor operations, using low-level APIs from the BNO055_SensorAPI official library, instead of Adafruit_BNO055.
  */
+
 class BNO055SensorInterface
 {
 private:
     bno055_t bno;
+
+    // Private static I2C bus functions
+    static s8 BNO055_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+    static s8 BNO055_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+    static void BNO055_delay_msek(u32 msek);
 
 public:    
     /**
