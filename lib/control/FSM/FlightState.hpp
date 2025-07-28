@@ -46,7 +46,7 @@ struct StateTransition
     RocketState toState;
     std::function<bool()> condition;    // Lambda function to check transition conditions
 
-    StateTransition(RocketState from, RocketState to, std::function<bool()> cond)
+    StateTransition(RocketState from, RocketState to, const std::function<bool()>& cond)
         : fromState(from), toState(to), condition(cond) {}
 };
 
@@ -63,6 +63,6 @@ struct StateActions
     std::function<void()> onExit;
 
     StateActions() : onEntry(nullptr), onUpdate(nullptr), onExit(nullptr) {}
-    StateActions(std::function<void()> entry, std::function<void()> update = nullptr, std::function<void()> exit = nullptr)
+    StateActions(const std::function<void()>& entry, const std::function<void()>& update = nullptr, const std::function<void()>& exit = nullptr)
         : onEntry(entry), onUpdate(update), onExit(exit) {}
 };
