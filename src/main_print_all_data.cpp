@@ -1,4 +1,3 @@
-// ...existing code...
 #include <Arduino.h>
 #include <BNO055Sensor.hpp>
 #include <MPRLSSensor.hpp>
@@ -18,6 +17,7 @@ RocketLogger rocketLogger;
 
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
+    Serial.setRxBufferSize(2048);
     
     bno.init();
     mprls.init();
@@ -25,8 +25,6 @@ void setup() {
 }
 
 void loop() {
-    Serial.println("Test");
-
     // Retrieve data from all sensors
     auto mprlsDataOpt = mprls.getData();
     auto bnoDataOpt = bno.getData();
@@ -49,11 +47,11 @@ void loop() {
     rocketLogger.logInfo("Some info");
     rocketLogger.logWarning("Some warning");
     rocketLogger.logError("Some error");
-
-    // Print all the logs in the logger
-    Serial.println(rocketLogger.getJSONAll().dump(4).c_str());
-    // Clear the logger after printing
+    
+    Serial.println(rocketLogger.getJSONAll().dump().c_str());
+    Serial.flush();
+    
     rocketLogger.clearData();
 
-    delay(1000);
+    delay(100);
 }

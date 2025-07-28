@@ -1,5 +1,3 @@
-# app.py
-
 import threading
 import json
 import time
@@ -11,13 +9,13 @@ import dash
 from dash import dcc, html, Output, Input
 
 # ---- CONFIGURE YOUR SERIAL PORT HERE ----
-SERIAL_PORT = 'COM6'  # Update to your actual Windows COM port
-BAUD_RATE = 115200
+SERIAL_PORT = '/dev/ttyACM0'
+BAUD_RATE = 1150200
 # -----------------------------------------
 
 # Shared data structures
-sensor_data = {}   # e.g. { "MPRLS": {"pressure": 1001.3, "ts": datetime(...)}, ... }
-logs = []          # list of {"ts": datetime, "type": "...", "source": "...", "message": "..."}
+sensor_data = {}
+logs = []
 
 # Start the Flask server
 server = Flask(__name__)
@@ -36,8 +34,9 @@ def serial_reader():
             line = ser.readline().decode('utf-8').strip()
             if not line:
                 continue
-
+            
             payload = json.loads(line)
+            
             # Expecting a list of message objects
             for entry in payload:
                 t = entry.get('type')
@@ -49,13 +48,13 @@ def serial_reader():
                     sd = content.get('sensorData', {})
                     sensor_data[source] = {
                         'values': sd,
-                        'ts': datetime.utcnow()
+                        'ts': datetime.now()
                     }
 
                 elif t in ('INFO','WARNING','ERROR'):
                     msg = content.get('message', '')
                     logs.append({
-                        'ts': datetime.utcnow(),
+                        'ts': datetime.now(),
                         'type': t,
                         'source': source,
                         'message': msg
@@ -64,9 +63,10 @@ def serial_reader():
             # trim logs to last 200 messages
             if len(logs) > 200:
                 del logs[:-200]
-
+            print("Valid JSON received and processed successfully!")
         except json.JSONDecodeError:
             # skip invalid JSON
+            print(f"Invalid JSON received!")
             continue
         except Exception as e:
             print(f"Error in serial_reader: {e}")
@@ -125,7 +125,7 @@ def update_logs(n):
 )
 def update_sensors(n):
     """Render each sensor’s latest readings and time since update."""
-    now = datetime.utcnow()
+    now = datetime.now()
     panels = []
     for src, data in sensor_data.items():
         vals = data['values']
