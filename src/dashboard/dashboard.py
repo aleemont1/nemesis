@@ -8,7 +8,7 @@ from flask import Flask
 import dash
 from dash import dcc, html, Output, Input
 
-# ---- CONFIGURE YOUR SERIAL PORT HERE ----
+# ---- CONFIGURATIONS ----
 SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 1150200
 # -----------------------------------------
