@@ -90,7 +90,8 @@ std::optional<SensorData> BNO055Sensor::getData()
     data.setData("accelerometer", std::map<std::string, float>{
                                       {"x", accelData[0]},
                                       {"y", accelData[1]},
-                                      {"z", accelData[2]}});
+                                      {"z", accelData[2]},
+                                      {"magnitude", sqrt(accelData[0] * accelData[0] + accelData[1] * accelData[1] + accelData[2] * accelData[2])}});
 
     data.setData("gravity", std::map<std::string, float>{
                                 {"x", gravityData[0]},
