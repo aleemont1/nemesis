@@ -22,7 +22,7 @@ void RocketFSM::init()
 
 void RocketFSM::update()
 {
-    ulong currentTime = millis();
+    unsigned long currentTime = millis();
     lastUpdateTime = currentTime;
 
     if (stateActions[currentState].onUpdate)
@@ -89,7 +89,7 @@ String RocketFSM::getStateString(RocketState state) const
 
 void RocketFSM::forceTransition(RocketState newState)
 {
-    this->currentState = newState;
+    this->transitionTo(newState);
 }
 
 void RocketFSM::setupStateActions()
@@ -216,58 +216,76 @@ void RocketFSM::checkTransitions()
 
 void RocketFSM::onInactiveEntry()
 {
+    // Start initialization task
 }
 
 void RocketFSM::onCalibratingEntry()
 {
+    // Start calibrating task
+    // Start system health check task
 }
 
 void RocketFSM::onReadyForLaunchEntry()
 {
+    // Start logger task
+    // Start telemetry task
 }
 
 void RocketFSM::onLaunchEntry()
 {
+    // Start flight timer
 }
 
 void RocketFSM::onAcceleratedFlightEntry()
 {
+    // Start EKF elaboration
 }
 
 void RocketFSM::onBallisticFlightEntry()
 {
+    // Start apogee detection task
 }
 
 void RocketFSM::onApogeeEntry()
 {
+    // Start drogue 'chute opening task
 }
 
 void RocketFSM::onStabilizationEntry()
 {
+    // Start main 'chute opening task
 }
 
 void RocketFSM::onDecelerationEntry()
 {
+
 }
 
 void RocketFSM::onLandingEntry()
 {
+    // Stop EKF elaboration
+    // Stop data collection task
 }
 
 void RocketFSM::onRecoveredEntry()
 {
+    // Stop telemetry task
 }
 
 void RocketFSM::onCalibratingExit()
 {
+    // Health checks are ok, calibration is ok
+    // Start reading data task
 }
 
 void RocketFSM::onLandingExit()
 {
+    // Save logs on SD card
 }
 
 void RocketFSM::onRecoveredExit()
 {
+    // Stop all tasks and make some happy noises
 }
 
 void RocketFSM::onFlightUpdate()
@@ -276,6 +294,7 @@ void RocketFSM::onFlightUpdate()
 
 void RocketFSM::onRecoveryUpdate()
 {
+    
 }
 
 bool RocketFSM::isCalibrationComplete()
@@ -290,45 +309,52 @@ bool RocketFSM::isSystemReady()
 
 bool RocketFSM::isLaunchDetected()
 {
+    // Acceleration > Acceleration_threshold for at least liftoff_timeout_threshold ms
     return false;
 }
 
 bool RocketFSM::isLiftoffStarted()
 {
-    return millis() - stateStartTime > LIFTOFF_TIMEOUT_MS; // Detect liftoff after 100ms from launch (previous condition satisfied) //!TODO: to be refactored with a configurable parameter
+    return millis() - stateStartTime > LIFTOFF_TIMEOUT_MS; // Detect liftoff after 100ms from launch (previous condition satisfied)
 }
 
 bool RocketFSM::isAccelerationPhaseComplete()
 {
+    // Acceleration = 0 for at least ballistic_timeout_threshold ms
     return false;
 }
 
 bool RocketFSM::isBallisticPhaseComplete()
 {
+    // Vertical velocity is ~0 for at least apogee_timeout_threshold ms
     return false;
 }
 
 bool RocketFSM::isApogeeReached()
 {
+    // Vertical velocity is < 0 (falling)
     return false;
 }
 
 bool RocketFSM::isDrogueReady()
 {
-    return millis() - stateStartTime > DROGUE_APOGEE_TIMEOUT; // Open drogue after 300ms, //!TODO: to be refactored with a configurable parameter
+    return millis() - stateStartTime > DROGUE_APOGEE_TIMEOUT; // Open drogue after 300ms
 }
 
 bool RocketFSM::isStabilizationComplete()
 {
+    // Altitude is < main_parachute_altitude_threshold meters
     return false;
 }
 
 bool RocketFSM::isDecelerationComplete()
 {
+    // Reached minimum vertical velocity before landing 
     return false;
 }
 
 bool RocketFSM::isLandingComplete()
 {
+    // Vertical velocity is 0 for at least landing_timout_threshold ms
     return false;
 }
