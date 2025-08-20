@@ -33,5 +33,10 @@
 
 // #define TRANSMITTER_CONFIG_MODE_ENABLE // Enable configuration mode for the transmitter (needs to be tested on new hardware)
 
+// Kalman Constants
+#define SEA_LEVEL 165.0f
+#define H_BIAS_PRESSURE_SENSOR 2.0f
+#define GPS_BIAS 3.0f
+
 // Important math constants
 #define GRAVITY 9.80665f

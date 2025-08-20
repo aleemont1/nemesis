@@ -1,6 +1,9 @@
 #include "KalmanFilter1D.hpp"
 
-KalmanFilter1D::KalmanFilter1D(Eigen::Vector3f gravity_value, Eigen::Vector3f magnetometer_value) {
+KalmanFilter1D::KalmanFilter1D(
+    Eigen::Vector3f gravity_value, 
+    Eigen::Vector3f magnetometer_value) 
+{
     //calibration phase
     std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> calibration_data = calibration(gravity_value, magnetometer_value);
 
@@ -21,96 +24,24 @@ KalmanFilter1D::KalmanFilter1D(Eigen::Vector3f gravity_value, Eigen::Vector3f ma
     ekf.x[3] = std::get<0>(calibration_data).x();
     ekf.x[4] = std::get<0>(calibration_data).y();
     ekf.x[5] = std::get<0>(calibration_data).z();
-}
-
-// Pressure to altitude conversion using the barometric formula. 
-// seaLevelPressurePa and T0 can be found online for day and location
-// h0 is the altitude over sea level for that location
-float pressureToAltitude(float pressurePa, float seaLevelPressurePa = 101325.0, float T0 = 288.15, float h0 = 0.0) {
-    return T0/0.0065f * (1.0f - std::pow(pressurePa / seaLevelPressurePa, 0.1903f)) - h0;
-}
-
-std::vector<std::vector<float>> KalmanFilter1D::step(float dt, float omega[3], float accel[3], float pressure) {
-    // Convert accelerometer readings to Eigen vector
-    Eigen::Vector3f accel_z(accel[0], accel[1], accel[2]);
     
-    // Convert gyroscope readings from degrees/sec to radians/sec because TinyEKF expects radians
-    omega[0] *= (float)M_PI / 180.0f;
-    omega[1] *= (float)M_PI / 180.0f;
-    omega[2] *= (float)M_PI / 180.0f;
-    
-    float fx[EKF_N] = {0};
-    float hx[EKF_M] = {0};
-    
-    Eigen::Matrix<float,3,4> Hq = computeHqAccelJacobian(
-        dt,
-        Eigen::Quaternionf(ekf.x[2], ekf.x[3], ekf.x[4], ekf.x[5]),
-        accel_z,
-        Eigen::Vector3f(omega[0], omega[1], omega[2])
-    ); 
-
-    // THIS MIGHT SHADOWS THE CLASS ONE. Jacobian of z (measurement) with respect to the state x (position, velocity, quaternion)
-    // H matrix is NOT z = H*x. But z = hx, computed in run_model
-    float H[EKF_M*EKF_N] = {
-        0, 0, Hq(0,0), Hq(0,1), Hq(0,2), Hq(0,3),
-        0, 0, Hq(1,0), Hq(1,1), Hq(1,2), Hq(1,3),
-        0, 0, Hq(2,0), Hq(2,1), Hq(2,2), Hq(2,3),
-        0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0
+    // Inizialize matrices
+    float tempR[EKF_M*EKF_M] = {
+        A0, 0, 0, 0, 0, 0, 0,
+        0, A0, 0, 0, 0, 0, 0,
+        0, 0, A0, 0, 0, 0, 0,
+        0, 0, 0, G0, 0, 0, 0,
+        0, 0, 0, 0, G0, 0, 0,
+        0, 0, 0, 0, 0, estimateBaroVar(0), 0,
+        0, 0, 0, 0, 0, 0, GPS_Z0
     };
-
-    // Estimate the barometer variance based on velocity
-    float barvar = (std::abs(std::pow(ekf.x[1], 2.0f))) * 0.35f + R0;  // This is the variance (std)^2
-    //float barvar =  std * std;
-    R[EKF_M*EKF_M - 1] = barvar; // Update the last element of R with the barometer variance
-
-    R[EKF_M*EKF_M - 1] = barvar; // Update the last element of R with the barometer variance
-    float h_pressure = pressureToAltitude(pressure); // Convert pressure to altitude
-    
-    // Set the observation vector z
-    float z[EKF_M] = {accel[0], accel[1], accel[2], omega[0], omega[1], omega[2], h_pressure};
-
-    computeJacobianF_tinyEKF(dt, omega, accel, h_pressure);
-
-    run_model(dt, fx, hx, omega, accel, h_pressure);
-    
-    ekf_predict(&ekf, fx, F, Q);
-
-    ekf_update(&ekf, z, hx, H, R);
-
-    Eigen::Quaternionf q(ekf.x[2], ekf.x[3], ekf.x[4], ekf.x[5]);
-    float roll, pitch, yaw;
-    quaternionToEulerAngles(q, roll, pitch, yaw);
-    
-    std::vector<float> posEKF = { ekf.x[0], 0, 0};
-    std::vector<float> velEKF = { ekf.x[1], 0, 0};
-    
-    return {posEKF, velEKF};
+    std::copy(tempR, tempR + EKF_M*EKF_M, R);
 }
 
-float* KalmanFilter1D::state() {
-    return ekf.x;
-}
-
-void KalmanFilter1D::quaternionToEulerAngles(const Eigen::Quaternionf& q, float& roll, float& pitch, float& yaw) {
-    // Extract quaternion components
-    float w = q.w();
-    float x = q.x();
-    float y = q.y();
-    float z = q.z();
-
-    // Calculate roll (ϕ)
-    roll = std::atan2(2.0f * (w * x + y * z), 1.0f - 2.0f * (x * x + y * y));
-
-    // Calculate pitch (θ)
-    pitch = std::asin(2.0f * (w * y - z * x));
-
-    // Calculate yaw (ψ)
-    yaw = std::atan2(2.0f * (w * z + x * y), 1.0f - 2.0f * (y * y + z * z));
-}
-
-std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> KalmanFilter1D::calibration(Eigen::Vector3f gravity_reading, Eigen::Vector3f magnetometer_reading) {
+std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> KalmanFilter1D::calibration(
+    Eigen::Vector3f gravity_reading, 
+    Eigen::Vector3f magnetometer_reading) 
+{
     Eigen::Vector3f TolSTD(0.1, 0.1, 0.1); // Tolerance for standard deviation
     Eigen::Vector3f std(1, 1, 1); // Standard deviation of the gravity readings
 
@@ -152,79 +83,70 @@ std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> KalmanFilter1D:
     return std::make_tuple(initial_quaternion, bias_a, bias_w);
 }
 
-Eigen::Vector3f KalmanFilter1D::rotateToBody(const Eigen::Quaternionf& q, const Eigen::Vector3f& vec_world) {
-    return q.conjugate() * vec_world;  // Equivalent to R^T * vec
-}
-
-// Compute H_q^{(a)} numerically
-Eigen::Matrix<float, 3, 4> KalmanFilter1D::computeHqAccelJacobian(
-    const float dt,
-    const Eigen::Quaternionf& q_nominal,
-    const Eigen::Vector3f& accel_z,
-    const Eigen::Vector3f& omega,
-    float epsilon)
+void KalmanFilter1D::step(
+    float dt, 
+    float omega[3], 
+    float accel[3], 
+    float pressure,
+    float gps) 
 {
-    // Update quaternion
-    // omega = [wx, wy, wz] in rad/s
-    Eigen::Vector3f omega_eigen = omega - bias_g; // Subtract gyroscope bias
-    Eigen::Vector3f axis = omega_eigen.normalized();
-    float theta = omega_eigen.norm() * dt;
-    Eigen::Quaternionf delta_q(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
-
-    Eigen::Quaternionf q_rot =  q_nominal * delta_q;
-    q_rot.normalize();
+    // Convert accelerometer readings to Eigen vector
+    Eigen::Vector3f accel_z(accel[0], accel[1], accel[2]);
     
-    // !!! Not sure the current gravity initialization gives correct results
-    Eigen::Vector3f accel_world = q_rot * (accel_z - bias_a) + gravity;  // Equivalent to q * a * q.inverse()
+    // Convert gyroscope readings from degrees/sec to radians/sec because TinyEKF expects radians
+    omega[0] *= (float)M_PI / 180.0f;
+    omega[1] *= (float)M_PI / 180.0f;
+    omega[2] *= (float)M_PI / 180.0f;
+    
+    // Update the last element of R with the barometer variance
+    R[EKF_M*EKF_M - 1] = estimateBaroVar(ekf.x[1]);
+    float h_pressure = pressureToAltitude(pressure) - H_BIAS_PRESSURE_SENSOR - SEA_LEVEL;
+    float z_gps = gps - SEA_LEVEL - GPS_BIAS;
 
-    // std::cout << "Line: " << lineNum << ", Accel: " << accel_abs.transpose() << std::endl; 
-    Eigen::Matrix<float,3,4> H = Eigen::Matrix<float,3,4>::Zero();
-    Eigen::Vector4f q_vec = q_nominal.coeffs();  // (x, y, z, w)
+    float fx[EKF_N] = {0};
+    float hx[EKF_M] = {0};
 
-    for (int i = 0; i < 4; ++i) {
-        Eigen::Vector4f dq = Eigen::Vector4f::Zero();
-        dq(i) = epsilon;
+    computeJacobianF_tinyEKF(dt, omega, accel, h_pressure, z_gps);
 
-        // Perturb positively
-        Eigen::Vector4f q_plus_vec = q_vec + dq;
-        Eigen::Quaternionf q_plus(q_plus_vec(3), q_plus_vec(0), q_plus_vec(1), q_plus_vec(2));
-        q_plus.normalize();
+    // Set the observation vector z
+    float z[EKF_M] = {accel[0], accel[1], accel[2], omega[0], omega[1], omega[2], h_pressure, z_gps};
 
-        // Perturb negatively
-        Eigen::Vector4f q_minus_vec = q_vec - dq;
-        Eigen::Quaternionf q_minus(q_minus_vec(3), q_minus_vec(0), q_minus_vec(1), q_minus_vec(2));
-        q_minus.normalize();
+    run_model(dt, fx, hx, omega, accel, h_pressure, z_gps);
 
-        // Rotate vector under perturbed quaternions
-        Eigen::Vector3f a_plus = rotateToBody(q_plus, accel_world);
-        Eigen::Vector3f a_minus = rotateToBody(q_minus, accel_world);
+    ekf_predict(&ekf, fx, F, Q);
 
-        // Central difference
-        H.col(i) = (a_plus - a_minus) / (2.0f * epsilon);
-    }
-
-    return H;  // size 3x4
+    ekf_update(&ekf, z, hx, H, R);
 }
 
-void KalmanFilter1D::run_model(float dt, float fx[EKF_N], float hx[EKF_M], float omega_z[3], float accel_z[3], float h_pressure_sensor) {
+
+void KalmanFilter1D::run_model(
+    float dt, 
+    float fx[EKF_N], 
+    float hx[EKF_M], 
+    float omega_z[3], 
+    float accel_z[3], 
+    float h_pressure_sensor,
+    float z_gps)
+{
     Eigen::Vector3f omega(omega_z[0], omega_z[1], omega_z[2]);
     
     // Build the quaternion rotation from the gyroscope readings:
-    // 1. Subtract the gyroscope bias
+    // Subtract the gyroscope bias
     Eigen::Vector3f omega_eigen = omega - bias_g;
-
-    // 2. Define the axis of rotation and the angle
-    Eigen::Vector3f axis = omega_eigen.normalized();
-
-    // 3. Compute the angle of rotation
+    
+    // Compute the angle of rotation
     float theta = omega_eigen.norm() * dt;
 
-    // 4. Create the quaternion representing the rotation
+    // Define the axis of rotation and the angle
+    Eigen::Vector3f axis = omega_eigen.normalized();
+
+    // Create the quaternion representing the rotation
     Eigen::Quaternionf delta_q(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
     Eigen::Quaternionf q_nominal(ekf.x[2], ekf.x[3], ekf.x[4], ekf.x[5]);
 
-    // 5. Update the quaternion state
+    // Update the quaternion state
     Eigen::Quaternionf q_rot =  q_nominal*delta_q;
+    Eigen::Vector3f omega_abs = q_rot * omega_eigen;
     q_rot.normalize();
 
     // Acceleration of body --> Intertial frame
@@ -232,8 +154,8 @@ void KalmanFilter1D::run_model(float dt, float fx[EKF_N], float hx[EKF_M], float
     Eigen::Vector3f accel_abs = q_rot * (acc_body - bias_a) + gravity;  // Equivalent to q * a * q.inverse()
 
     // Position
-    fx[0] = (float)(ekf.x[0] + ekf.x[1]*dt);
-    
+    fx[0] = (float)(ekf.x[0] + ekf.x[1]*dt + 0.5f*accel_abs[2]*dt*dt);
+
     // Velocities
     fx[1] = (float)(ekf.x[1] + accel_abs[2]*dt);
 
@@ -245,29 +167,39 @@ void KalmanFilter1D::run_model(float dt, float fx[EKF_N], float hx[EKF_M], float
 
     // Measurements
     // Here we have to put the expected measurements of the acceleration /Review for future updates
-    hx[0] = accel_z[0] + bias_a[0];
-    hx[1] = accel_z[1] + bias_a[1];
-    hx[2] = accel_z[2] + bias_a[2];
-    hx[3] = omega_z[0] + bias_g[0];
-    hx[4] = omega_z[1] + bias_g[1];
-    hx[5] = omega_z[2] + bias_g[2];
-    hx[6] = h_pressure_sensor;
+    hx[0] = acc_body[0];
+    hx[1] = acc_body[1];
+    hx[2] = acc_body[2];
+    hx[3] = omega_z[0];
+    hx[4] = omega_z[1];
+    hx[5] = omega_z[2];
+    hx[6] = fx[0];
+    hx[7] = fx[0];
 }
 
-void KalmanFilter1D::computeJacobianF_tinyEKF(float dt, float omega_z[3], float accel_z[3], float h_pressure_sensor) {
+void KalmanFilter1D::computeJacobianF_tinyEKF(
+    float dt, 
+    float omega_z[3], 
+    float accel_z[3], 
+    float h_pressure_sensor, 
+    float z_gps) 
+{
     const float epsilon = 1e-5f;
     float fx_base[EKF_N];
     float hx_dummy[EKF_M]; // Not used
     std::vector<float> original_state(ekf.x, ekf.x + EKF_N);
 
-    run_model(dt, fx_base, hx_dummy, omega_z, accel_z, h_pressure_sensor);
+    run_model(dt, fx_base, hx_dummy, omega_z, accel_z, h_pressure_sensor, z_gps);
 
     for (int i = 0; i < EKF_N; ++i) {
         // Perturb state
+        float epsilon = 1e-5f * max(fabs(ekf.x[i]), 1.0f);
+        if (epsilon < 1e-6f) epsilon = 1e-6f;
+        
         ekf.x[i] += epsilon;
 
         float fx_perturbed[EKF_N];
-        run_model(dt, fx_perturbed, hx_dummy, omega_z, accel_z, h_pressure_sensor);
+        run_model(dt, fx_perturbed, hx_dummy, omega_z, accel_z, h_pressure_sensor, z_gps);
 
         for (int j = 0; j < EKF_N; ++j) {
             F[j * EKF_N + i] = (fx_perturbed[j] - fx_base[j]) / epsilon;
@@ -275,4 +207,43 @@ void KalmanFilter1D::computeJacobianF_tinyEKF(float dt, float omega_z[3], float 
 
         ekf.x[i] = original_state[i]; // Restore original state
     }
+}
+
+float* KalmanFilter1D::state() {
+    return ekf.x;
+}
+
+/*
+        SUPPORT FUNCTIONS
+*/
+
+// Pressure to altitude conversion using the barometric formula. 
+// seaLevelPressurePa and T0 can be found online for day and location
+// h0 is the altitude over sea level for that location
+float KalmanFilter1D::pressureToAltitude(
+        float pressure, 
+        float seaLevelPressurePa = 101325.0,
+        float T0 = 288.15,
+        float L = 0.0065,
+        float g0 = 9.80665,
+        float R = 8.31447,
+        float M = 0.0289644) 
+{
+    float exponent = R * L / (g0 * M);
+    float h = T0 / L * (1.0 - std::pow(pressure / seaLevelPressurePa, exponent));
+    return h;
+}
+
+Eigen::Vector3f KalmanFilter1D::rotateToBody(
+    const Eigen::Quaternionf& q, 
+    const Eigen::Vector3f& vec_world) 
+{
+    return q.conjugate() * vec_world;  // Equivalent to R^T * vec
+}
+
+float KalmanFilter1D::estimateBaroVar(
+    float v) 
+{
+    float std = (std::abs(v) / 300.0f) * 29.0f + 1.0f;
+    return std * std;
 }
