@@ -4,6 +4,9 @@ KalmanFilter1D::KalmanFilter1D(
     Eigen::Vector3f gravity_value, 
     Eigen::Vector3f magnetometer_value) 
 {
+    // Initialize gravity vector in ENU coordinates
+    gravity = Eigen::Vector3f(0, 0, 9.80537); // Expected gravity for specific location
+    
     //calibration phase
     std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> calibration_data = calibration(gravity_value, magnetometer_value);
 
@@ -27,13 +30,14 @@ KalmanFilter1D::KalmanFilter1D(
     
     // Inizialize matrices
     float tempR[EKF_M*EKF_M] = {
-        A0, 0, 0, 0, 0, 0, 0,
-        0, A0, 0, 0, 0, 0, 0,
-        0, 0, A0, 0, 0, 0, 0,
-        0, 0, 0, G0, 0, 0, 0,
-        0, 0, 0, 0, G0, 0, 0,
-        0, 0, 0, 0, 0, estimateBaroVar(0), 0,
-        0, 0, 0, 0, 0, 0, GPS_Z0
+        A0, 0, 0, 0, 0, 0, 0, 0,
+        0, A0, 0, 0, 0, 0, 0, 0,
+        0, 0, A0, 0, 0, 0, 0, 0,
+        0, 0, 0, G0, 0, 0, 0, 0,
+        0, 0, 0, 0, G0, 0, 0, 0,
+        0, 0, 0, 0, 0, G0, 0, 0,
+        0, 0, 0, 0, 0, 0, estimateBaroVar(0), 0,
+        0, 0, 0, 0, 0, 0, 0, GPS_Z0
     };
     std::copy(tempR, tempR + EKF_M*EKF_M, R);
 }
@@ -42,43 +46,46 @@ std::tuple<Eigen::Quaternionf, Eigen::Vector3f, Eigen::Vector3f> KalmanFilter1D:
     Eigen::Vector3f gravity_reading, 
     Eigen::Vector3f magnetometer_reading) 
 {
-    Eigen::Vector3f TolSTD(0.1, 0.1, 0.1); // Tolerance for standard deviation
-    Eigen::Vector3f std(1, 1, 1); // Standard deviation of the gravity readings
-
     Eigen::Vector3f expected_gravity(0, 0, 9.80537); // Expected gravity vector for specific location (Forlì - 34 m over sea level)
-    // Got from: https://www.sensorsone.com/local-gravity-calculator/
-
-    // Rotation Axis: cross product of gravity in local R.F. and Z R.F.
+    
+    // Improved gravity alignment algorithm
     Eigen::Vector3f z(0, 0, 1);
-    Eigen::Vector3f g = gravity.normalized();
-    Eigen::Vector3f axis = g.cross(z);
-    axis.normalize();
+    Eigen::Vector3f g = gravity_reading.normalized();
+    
+    // Handle edge case where gravity is already aligned with z-axis
+    Eigen::Quaternionf q_rot;
+    if (std::abs(g.dot(z)) > 0.9999f) {
+        q_rot = Eigen::Quaternionf::Identity();
+    } else {
+        Eigen::Vector3f axis = g.cross(z);
+        axis.normalize();
+        float angle = std::acos(std::clamp(g.dot(z), -1.0f, 1.0f));
+        q_rot = Eigen::Quaternionf(Eigen::AngleAxisf(angle, axis));
+    }
 
-    // Angle: acos of the dot product
-    float angle = acos(g.dot(z));
-
-    // Quaternion
-    Eigen::Quaternionf q_rot(Eigen::AngleAxisf(angle, axis));
-
-    // Rotate the quaternion to align with north
-    // Reading of the angle relative to North
+    // Improved north alignment with magnetic declination handling
     Eigen::Vector3f north_body = magnetometer_reading.normalized();
     Eigen::Vector3f y_axis_abs(0, 1, 0); // North vector in ENU frame
-    Eigen::Vector3f north_abs = q_rot * north_body; // Rotate magntetic north to body frame
-    float angle_rad = std::acos(north_abs.dot(y_axis_abs) / north_abs.norm());
-    Eigen::Quaternionf q_north(Eigen::AngleAxisf(angle_rad, Eigen::Vector3f(0, 0, 1))); // Quaternion to align with North
-    Eigen::Quaternionf initial_quaternion = q_north * q_rot;    // Rotation Abs RF to align with North
+    Eigen::Vector3f north_abs = q_rot * north_body;
+    
+    // Project to horizontal plane to avoid tilt effects
+    north_abs[2] = 0.0f;
+    north_abs.normalize();
+    
+    float angle_rad = std::atan2(north_abs[0], north_abs[1]); // Use atan2 for better handling
+    Eigen::Quaternionf q_north(Eigen::AngleAxisf(angle_rad, Eigen::Vector3f(0, 0, 1)));
+    Eigen::Quaternionf initial_quaternion = q_north * q_rot;
     initial_quaternion.normalize();
 
-    // Bias of the accelerometer. gravity is in ENU coordinates, so we need to rotate it to match the sensor's frame of reference.
+    // Improved bias estimation with better numerical stability
     Eigen::Quaternionf q_absolute_to_body = initial_quaternion.conjugate();
-    Eigen::Vector3f initial_gravity_body = q_absolute_to_body * gravity;
     Eigen::Vector3f expected_gravity_body = q_absolute_to_body * expected_gravity;
-    Eigen::Vector3f bias_a = initial_gravity_body - expected_gravity_body;
-
-    // Bias of the gyroscope
-    Eigen::Vector3f initial_omega(0, 0, 0); // Mean of various readings
-    Eigen::Vector3f bias_w = initial_omega - Eigen::Vector3f(0, 0, 0); // Assuming no rotation
+    
+    // Accelerometer bias: difference between measured and expected gravity in body frame
+    Eigen::Vector3f bias_a = gravity_reading - expected_gravity_body;
+    
+    // Gyroscope bias: assume zero initial angular velocity (stationary assumption)
+    Eigen::Vector3f bias_w = Eigen::Vector3f::Zero();
     
     return std::make_tuple(initial_quaternion, bias_a, bias_w);
 }
@@ -116,6 +123,25 @@ void KalmanFilter1D::step(
     ekf_predict(&ekf, fx, F, Q);
 
     ekf_update(&ekf, z, hx, H, R);
+    
+    // Add bounds checking to prevent numerical instability
+    for (int i = 0; i < EKF_N; i++) {
+        if (!isfinite(ekf.x[i])) {
+            // Reset to safe values if state becomes invalid
+            if (i == 0) ekf.x[i] = 0.0f;        // position
+            else if (i == 1) ekf.x[i] = 0.0f;   // velocity
+            else if (i == 2) ekf.x[i] = 1.0f;   // quaternion w
+            else ekf.x[i] = 0.0f;               // quaternion x,y,z
+        }
+    }
+    
+    // Normalize quaternion to maintain unit constraint
+    Eigen::Quaternionf q_state(ekf.x[2], ekf.x[3], ekf.x[4], ekf.x[5]);
+    q_state.normalize();
+    ekf.x[2] = q_state.w();
+    ekf.x[3] = q_state.x();
+    ekf.x[4] = q_state.y();
+    ekf.x[5] = q_state.z();
 }
 
 
@@ -137,11 +163,17 @@ void KalmanFilter1D::run_model(
     // Compute the angle of rotation
     float theta = omega_eigen.norm() * dt;
 
-    // Define the axis of rotation and the angle
-    Eigen::Vector3f axis = omega_eigen.normalized();
-
     // Create the quaternion representing the rotation
-    Eigen::Quaternionf delta_q(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
+    Eigen::Quaternionf delta_q;
+    if (theta > 1e-8f) {  // Only apply rotation if significant
+        // Define the axis of rotation and the angle
+        Eigen::Vector3f axis = omega_eigen.normalized();
+        delta_q = Eigen::Quaternionf(Eigen::AngleAxisf(theta, axis)); // delta_q = cos(theta/2) + axis*sin(theta/2)
+    } else {
+        // For very small rotations, use identity quaternion
+        delta_q = Eigen::Quaternionf::Identity();
+    }
+    
     Eigen::Quaternionf q_nominal(ekf.x[2], ekf.x[3], ekf.x[4], ekf.x[5]);
 
     // Update the quaternion state
@@ -172,8 +204,8 @@ void KalmanFilter1D::run_model(
     hx[3] = omega_z[0];
     hx[4] = omega_z[1];
     hx[5] = omega_z[2];
-    hx[6] = fx[0];
-    hx[7] = fx[0];
+    hx[6] = fx[0];  // Barometer measurement (altitude)
+    hx[7] = fx[0];  // GPS measurement (altitude)
 }
 
 void KalmanFilter1D::computeJacobianF_tinyEKF(

@@ -63,24 +63,47 @@ public:
      */
     float* state();
 
+    void setParameters(float p0, float v0, float qa, float a0, float g0) {
+        P0 = p0; V0 = v0; q_a = qa; A0 = a0; G0 = g0;
+        updateCovarianceMatrices();
+    }
+
+    void updateCovarianceMatrices() {
+        // Update Q matrix (process noise)
+        Q[0] = P0;    // Q[0,0]
+        Q[7] = V0;    // Q[1,1] 
+        Q[14] = q_a;  // Q[2,2]
+        Q[21] = q_a;  // Q[3,3]
+        Q[28] = q_a;  // Q[4,4] 
+        Q[35] = q_a;  // Q[5,5]
+        
+        // Update R matrix (measurement noise) - initialize with zeros first
+        for (int i = 0; i < EKF_M*EKF_M; i++) R[i] = 0.0f;
+        
+        // Set diagonal elements
+        R[0] = A0;   // accel_x variance
+        R[9] = A0;   // accel_y variance  
+        R[18] = A0;  // accel_z variance
+        R[27] = G0;  // gyro_x variance
+        R[36] = G0;  // gyro_y variance
+        R[45] = G0;  // gyro_z variance
+        R[54] = 1.0f; // pressure variance (you may want to make this configurable)
+        R[63] = GPS_Z0; // GPS variance
+    }
+
 private:
-    // TinyEKF structure for the Extended Kalman Filter
+        // TinyEKF structure for the Extended Kalman Filter
     ekf_t ekf;
 
-    
-    // How much we trust the Model, initial covariances of state noise, measurement noise
-    const float P0 = 1e-3f;     // position (m²)
-    const float V0 = 1e-4f;     // velocity (m²/s²)
-    const float q_a = 1e-6f;    // quaternion
+    // Make these non-const so they can be modified
+    float P0 = 1e-6f;     // position (m²)
+    float V0 = 1e-7f;     // velocity (m²/s²)
+    float q_a = 1e-8f;    // quaternion
     
     // How much we trust the Sensors
-    const float A0 = 1e-3f;       // accelerometer (m/s²)
-    const float G0 = 5e-4f;       // gyroscope (rad/s)
-    const float GPS_Z0 = 3.0f;    // GPS altitude (m²)
-
-    const float SeaLevel = 165.0f;
-    const float gps_bias = 3.0f;
-    const float h_bias_pressure_sensor = 2.0f;
+    float A0 = 1e-6f;       // accelerometer (m/s²)
+    float G0 = 5e-7f;       // gyroscope (rad/s)
+    float GPS_Z0 = 3.0f;    // GPS altitude (m²)
 
     // Bias of the sensors (initialized in the constructor functino with calibration data)
     Eigen::Vector3f bias_a; // Bias vector for accelerometer
@@ -107,8 +130,9 @@ private:
         0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0,
-        1, 0, 0, 0, 0, 0,
+        1, 0, 0, 0, 0, 0
     };
     
     // Measurement Jacobian with input/output relations
