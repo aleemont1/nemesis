@@ -2,7 +2,6 @@
 #include <ITransmitter.hpp>
 #include <Packet.hpp>
 #include <config.h>
-#include <zstd.h>
 #include <variant>
 #include <LoRa_E220.h>
 #include <HardwareSerial.h>

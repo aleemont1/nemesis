@@ -35,3 +35,8 @@
 #define LORA_M0 5
 #define LORA_M1 6
 // Add here some other pin.
+
+static constexpr int LORA_NSS_PIN = 5;   // Chip Select
+static constexpr int LORA_DIO1_PIN = 2;  // DIO1 (interrupt)
+static constexpr int LORA_NRST_PIN = 14; // Reset
+static constexpr int LORA_BUSY_PIN = 4;  // Busy
