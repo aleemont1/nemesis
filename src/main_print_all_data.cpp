@@ -8,7 +8,10 @@
 #include <config.h>
 #include <RocketLogger.hpp>
 #include <SX1261LoRaTransmitter.hpp>
-// #include <CSVLogger.hpp> // Aggiungi il CSV Logger
+// #include <CSVLogger.hpp> // Aggiungi il CSV Logger !!!! VEDERE SE FUNZIONA. NON SONO RIUSCITO A TESTARE SU MIO HW. 
+
+// CSVLogger csvLogger("flight_data.csv"); // Crea il CSV logger !!!! DA RIVEDERE SE FUNZIONA BENE, NON HO POTUTO TESTARE SU HW !!!!
+
 
 // Sensor objects
 BNO055Sensor bno;
@@ -21,7 +24,6 @@ GPS gps;
 
 // Logger objects
 RocketLogger rocketLogger;
-// CSVLogger csvLogger("flight_data.csv"); // Crea il CSV logger
 LoRaTransmitter transmitter;
 
 // ADC pin for voltage measurement
