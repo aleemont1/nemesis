@@ -1,6 +1,5 @@
 #include "RocketFSM.hpp"
-#include <config.h>
-#include <KalmanFilter.hpp>
+
 #include "esp_task_wdt.h"
 #include "esp_heap_caps.h"
 
@@ -13,7 +12,7 @@ extern ISensor *baro2;
 extern ISensor *gps;
 extern ILogger *rocketLogger;
 extern ITransmitter<TransmitDataType> *loraTransmitter;
-extern KalmanFilter *ekf;
+extern KalmanFilter1D *ekf;
 
 // Debug macro that only prints when __DEBUG__ is defined
 #ifdef __DEBUG__
@@ -989,31 +988,7 @@ void RocketFSM::sensorTask()
             debugMemory("Sensor task loop");
         }
 
-        // Read sensors efficiently
-        if (bno055)
-        {
-            auto data = bno055->getData();
-            if (data.has_value())
-            {
-                sharedData.imuData = data.value();
-            }
-        }
-        if (baro1)
-        {
-            auto data = baro1->getData();
-            if (data.has_value())
-            {
-                sharedData.baroData1 = data.value();
-            }
-        }
-        if (baro2)
-        {
-            auto data = baro2->getData();
-            if (data.has_value())
-            {
-                sharedData.baroData2 = data.value();
-            }
-        }
+        
 
         loopCount++;
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -1467,6 +1442,7 @@ void RocketFSM::onRecoveredExit()
     DEBUG_PRINT("Exiting Recovered state");
     debugMemory("onRecoveredExit");
 
+    this->stop();
     // if (rocketLogger)
         // rocketLogger->logInfo("System shutdown");
 }
@@ -1480,6 +1456,17 @@ bool RocketFSM::isCalibrationComplete()
     if (result)
     {
         DEBUG_PRINT("DEBUG: Calibration timeout reached, triggering transition");
+    }
+    return result;
+}
+
+bool RocketFSM::isSystemReady()
+{
+    // Modifica per transizione automatica dopo 2 secondi
+    bool result = millis() - stateStartTime > 2000;
+    if (result)
+    {
+        DEBUG_PRINT("DEBUG: System ready timeout reached, triggering transition");
     }
     return result;
 }
