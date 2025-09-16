@@ -11,6 +11,8 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
+#include <config.h>
+#include <KalmanFilter1D.hpp>
 
 // Shared sensor data structure
 struct SharedSensorData
@@ -25,7 +27,13 @@ struct SharedSensorData
 
 struct SharedFilteredData
 {
+    float altitude;
+    float verticalVelocity;
+    float orientation[4]; // Quaternion [w, x, y, z]
+    uint32_t timestamp;
+    bool dataValid;
 };
+
 /**
  * @brief Rocket Finite State Machine class with FreeRTOS integration
  */
@@ -81,6 +89,10 @@ public:
     bool isFinished();
 
 private:
+    // FSM Configuration constants
+    static const int EVENT_QUEUE_SIZE = 10;
+    static const int FSM_TASK_STACK_SIZE = 4096;
+    static const UBaseType_t FSM_TASK_PRIORITY = 2; // Highest priority
     // FreeRTOS components
     TaskHandle_t fsmTaskHandle;
     QueueHandle_t eventQueue;
@@ -96,11 +108,6 @@ private:
     TaskHandle_t telemetryTaskHandle;      // Core 1 - Non-critical
     TaskHandle_t gpsTaskHandle;            // Core 1 - Non-critical
     TaskHandle_t loggingTaskHandle;        // Core 1 - Non-critical
-
-    // Configuration constants
-    static const int EVENT_QUEUE_SIZE = 10;
-    static const int FSM_TASK_STACK_SIZE = 4096;
-    static const UBaseType_t FSM_TASK_PRIORITY = 2; // Highest priority
 
     // State management
     RocketState currentState;
@@ -159,6 +166,8 @@ private:
      */
     void checkTransitions();
 
+    /* These static wrappers are needed because FreeRTOS tasks require a C-like signature
+        for Task creation. These are wrappers of the C++ class methods below. */
     // Static task wrappers for Core 0 (Critical)
     static void sensorTaskWrapper(void *parameter);
     static void ekfTaskWrapper(void *parameter);
@@ -172,15 +181,23 @@ private:
     static void loggingTaskWrapper(void *parameter);
 
     // Task functions for Core 0 (Critical)
+    /* Collect IMU and Barometers data */
     void sensorTask();
+    /* Run the EKF to fuse sensor data */
     void ekfTask();
+    /* Detect apogee based on EKF data */
     void apogeeDetectionTask();
+    /* Handle recovery system deployment */
     void recoveryTask();
 
     // Task functions for Core 1 (Non-critical)
+    /* Aggregate sensor data and GPS data in the shared data structure (might be removed)*/
     void dataCollectionTask();
+    /* Send telemetry data via LoRa */
     void telemetryTask();
+    /* Read GPS data and update shared structure */
     void gpsTask();
+    /* Log data to SD card */
     void loggingTask();
 
     // State entry/exit actions
