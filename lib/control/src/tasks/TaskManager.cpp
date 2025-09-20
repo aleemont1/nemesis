@@ -1,9 +1,9 @@
 #include "tasks/TaskManager.hpp"
 #include "tasks/SensorTask.hpp"
 #include "tasks/EkfTask.hpp"
+#include "tasks/GpsTask.hpp"
 // #include "tasks/TelemetryTask.hpp"
 // #include "tasks/LoggingTask.hpp"
-// #include "tasks/GpsTask.hpp"
 // ... include other specific task headers
 
 TaskManager::TaskManager(std::shared_ptr<SharedSensorData> sensorData, 
@@ -26,7 +26,7 @@ void TaskManager::initializeTasks() {
     tasks[TaskType::SENSOR] = std::make_unique<SensorTask>(sensorData, sensorDataMutex);
     // tasks[TaskType::TELEMETRY] = std::make_unique<TelemetryTask>(sensorData, sensorDataMutex);
     // tasks[TaskType::LOGGING] = std::make_unique<LoggingTask>(sensorData, sensorDataMutex);
-    // tasks[TaskType::GPS] = std::make_unique<GpsTask>(sensorData, sensorDataMutex);
+    tasks[TaskType::GPS] = std::make_unique<GpsTask>(sensorData, sensorDataMutex);
     tasks[TaskType::EKF] = std::make_unique<EkfTask>(sensorData, sensorDataMutex, kalmanFilter);
     // tasks[TaskType::APOGEE_DETECTION] = std::make_unique<ApogeeDetectionTask>(filteredData, filteredDataMutex);
     // tasks[TaskType::RECOVERY] = std::make_unique<RecoveryTask>(sharedData.get(), dataMutex);
