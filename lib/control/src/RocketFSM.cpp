@@ -3,6 +3,27 @@
 #include "esp_heap_caps.h"
 #include <Arduino.h>
 
+#define __DEBUG__
+
+// Debug macro that only prints when __DEBUG__ is defined
+#ifdef __DEBUG__
+    #define DEBUG_PRINT(x) Serial.println(x)
+    #define DEBUG_PRINTF(format, ...) Serial.printf(format, ##__VA_ARGS__)
+#else
+    #define DEBUG_PRINT(x)
+    #define DEBUG_PRINTF(format, ...)
+#endif
+
+// Add this utility method to RocketFSM class header
+void debugMemory(const char *location)
+{
+    DEBUG_PRINTF("\n=== MEMORY DEBUG [%s] ===\n", location);
+    DEBUG_PRINTF("Free heap: %u bytes\n", ESP.getFreeHeap());
+    DEBUG_PRINTF("Min free heap: %u bytes\n", ESP.getMinFreeHeap());
+    DEBUG_PRINTF("Max alloc heap: %u bytes\n", ESP.getMaxAllocHeap());
+    DEBUG_PRINTF("Largest free block: %u bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    DEBUG_PRINTF("==========================\n\n");
+}
 // Event queue size
 static const size_t EVENT_QUEUE_SIZE = 10;
 
@@ -263,46 +284,59 @@ void RocketFSM::setupStateActions()
                          { Serial.println("[STATE] Entering CALIBRATING"); })
         .setExitAction([this]()
                        { Serial.println("[STATE] Exiting CALIBRATING"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Calib", 2048, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::LOGGING, "Logging_Calib", 1536, TaskPriority::TASK_MEDIUM, TaskCore::CORE_1, true));
-
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Calib1", 4096, TaskPriority::TASK_MEDIUM, TaskCore::CORE_1, true));
     // READY_FOR_LAUNCH state
     stateActions[RocketState::READY_FOR_LAUNCH] = std::make_unique<StateAction>(RocketState::READY_FOR_LAUNCH);
     stateActions[RocketState::READY_FOR_LAUNCH]
         ->setEntryAction([this]()
                          { Serial.println("[STATE] Entering READY_FOR_LAUNCH"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ready", 2048, TaskPriority::TASK_CRITICAL, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::TELEMETRY, "Telemetry_Ready", 2048, TaskPriority::TASK_LOW, TaskCore::CORE_1, true))
-        .addTask(TaskConfig(TaskType::LOGGING, "Logging_Ready", 1536, TaskPriority::TASK_MEDIUM, TaskCore::CORE_1, true));
-
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ready", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
     // LAUNCH state
     stateActions[RocketState::LAUNCH] = std::make_unique<StateAction>(RocketState::LAUNCH);
     stateActions[RocketState::LAUNCH]
         ->setEntryAction([this]()
                          { Serial.println("[STATE] Entering LAUNCH"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Launch", 2048, TaskPriority::TASK_CRITICAL, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::DATA_COLLECTION, "DataCollection_Launch", 2048, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
-
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Launch", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
+    stateActions[RocketState::ACCELERATED_FLIGHT] = std::make_unique<StateAction>(RocketState::ACCELERATED_FLIGHT);
+    stateActions[RocketState::ACCELERATED_FLIGHT]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering ACCELERATED_FLIGHT"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
     // BALLISTIC_FLIGHT state
     stateActions[RocketState::BALLISTIC_FLIGHT] = std::make_unique<StateAction>(RocketState::BALLISTIC_FLIGHT);
     stateActions[RocketState::BALLISTIC_FLIGHT]
         ->setEntryAction([this]()
                          { Serial.println("[STATE] Entering BALLISTIC_FLIGHT"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ballistic", 2048, TaskPriority::TASK_CRITICAL, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "EKF_Ballistic", 2048, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::APOGEE_DETECTION, "ApogeeDetection", 1536, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::DATA_COLLECTION, "DataCollection_Ballistic", 2048, TaskPriority::TASK_MEDIUM, TaskCore::CORE_1, true));
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ballistic", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
 
     stateActions[RocketState::APOGEE] = std::make_unique<StateAction>(RocketState::APOGEE);
+    stateActions[RocketState::APOGEE]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering APOGEE"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::STABILIZATION] = std::make_unique<StateAction>(RocketState::STABILIZATION);
+    stateActions[RocketState::STABILIZATION]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering STABILIZATION"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Stabilization", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
 
     stateActions[RocketState::DECELERATION] = std::make_unique<StateAction>(RocketState::DECELERATION);
+    stateActions[RocketState::DECELERATION]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering DECELERATION"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::LANDING] = std::make_unique<StateAction>(RocketState::LANDING);
-
+    stateActions[RocketState::LANDING]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering LANDING"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Landing", 4096, TaskPriority::TASK_MEDIUM, TaskCore::CORE_0, true));
     stateActions[RocketState::RECOVERED] = std::make_unique<StateAction>(RocketState::RECOVERED);
-
+    stateActions[RocketState::RECOVERED]
+        ->setEntryAction([this]()
+                         { Serial.println("[STATE] Entering RECOVERED"); })
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_PostFlight", 4096, TaskPriority::TASK_LOW, TaskCore::CORE_1, true));
     Serial.println("[RocketFSM] State actions setup complete");
 }
 
@@ -340,6 +374,35 @@ void RocketFSM::setupTransitions()
         RocketState::BALLISTIC_FLIGHT,
         RocketState::APOGEE,
         FSMEvent::APOGEE_REACHED));
+
+    transitionManager->addTransition(Transition(
+        RocketState::APOGEE,
+        RocketState::STABILIZATION,
+        FSMEvent::DROGUE_READY));
+
+    transitionManager->addTransition(Transition(
+        RocketState::STABILIZATION,
+        RocketState::DECELERATION,
+        FSMEvent::STABILIZATION_COMPLETE));
+
+    transitionManager->addTransition(Transition(
+        RocketState::DECELERATION,
+        RocketState::LANDING,
+        FSMEvent::DECELERATION_COMPLETE));
+
+    transitionManager->addTransition(Transition(
+        RocketState::LANDING,
+        RocketState::RECOVERED,
+        FSMEvent::LANDING_COMPLETE));
+
+    // Emergency abort transition from any state to INACTIVE
+    for (int state = static_cast<int>(RocketState::INACTIVE); state <= static_cast<int>(RocketState::RECOVERED); ++state)
+    {
+        transitionManager->addTransition(Transition(
+            static_cast<RocketState>(state),
+            RocketState::INACTIVE,
+            FSMEvent::EMERGENCY_ABORT));
+    }
 
     // Add more transitions as needed...
 
@@ -400,6 +463,7 @@ void RocketFSM::transitionTo(RocketState newState)
 
 void RocketFSM::processEvent(const FSMEventData &eventData)
 {
+    debugMemory("Before processEvent");
     Serial.printf("[RocketFSM] Processing event %d in state %s\n",
                   static_cast<int>(eventData.event),
                   getStateString(currentState).c_str());
@@ -458,7 +522,57 @@ void RocketFSM::checkTransitions()
             sendEvent(FSMEvent::LAUNCH_DETECTED);
         }
         break;
-
+    case RocketState::LAUNCH:
+        // Check if accelerated flight has begun (leaving launch pad, wait ... ms, as an example we'll wait 1s)
+        if (millis() - stateStartTime > 1000)
+        {
+            sendEvent(FSMEvent::LIFTOFF_STARTED);
+        }
+        break;
+    case RocketState::ACCELERATED_FLIGHT:
+        // Check if ballistic flight has begun (acceleration becomes <= 0, for now just a timeout of 6s)
+        if (millis() - stateStartTime > 2000)
+        {
+            sendEvent(FSMEvent::ACCELERATION_COMPLETE);
+        }
+        break;
+    case RocketState::BALLISTIC_FLIGHT:
+        // Check if apogee has arrived (vertical velocity <= 0, for now just a timeout of 3s)
+        if (millis() - stateStartTime > 3000)
+        {
+            sendEvent(FSMEvent::APOGEE_REACHED);
+        }
+        break;
+    case RocketState::APOGEE:
+        // Delay after drogue chute is opened (wait ... ms, for now 1s for testing)
+        if (millis() - stateStartTime > 1000)
+        {
+            sendEvent(FSMEvent::DROGUE_READY);
+        }
+        break;
+    case RocketState::STABILIZATION:
+        // Check if altitude is < 450m, for now a timeout of 3s for testing
+        if (millis() - stateStartTime > 3000)
+        {
+            sendEvent(FSMEvent::STABILIZATION_COMPLETE);
+        }
+        break;
+    case RocketState::DECELERATION:
+        // Check for touchdown, for now a timeout of 5s for testing
+        if (millis() - stateStartTime > 5000)
+        {
+            sendEvent(FSMEvent::DECELERATION_COMPLETE);
+        }
+        break;
+    case RocketState::LANDING:
+        // Check for user signal, for now a timeout of 3s for testing
+        if (millis() - stateStartTime > 3000)
+        {
+            sendEvent(FSMEvent::LANDING_COMPLETE);
+        }
+        break;
+    case RocketState::RECOVERED:
+        break;
         // Add more automatic transition logic as needed...
 
     default:

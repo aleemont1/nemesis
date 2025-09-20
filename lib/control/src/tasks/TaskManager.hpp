@@ -8,6 +8,12 @@
 #include <KalmanFilter1D.hpp>
 #include "TaskConfig.hpp"
 
+#include "SensorTask.hpp"
+#include "EkfTask.hpp"
+#include "GpsTask.hpp"
+//#include "TelemetryTask.hpp"
+//#include "LoggingTask.hpp"
+
 class TaskManager {
 private:
     std::map<TaskType, std::unique_ptr<ITask>> tasks;
