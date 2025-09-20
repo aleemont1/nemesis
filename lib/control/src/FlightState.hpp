@@ -69,7 +69,6 @@ enum class FSMEvent
 
     // Flight events
     ACCELERATION_COMPLETE, // Motor burnout detected
-    BALLISTIC_COMPLETE,    // Ballistic phase complete (deprecated - use APOGEE_REACHED)
     APOGEE_REACHED,        // Maximum altitude reached
 
     // Recovery events
