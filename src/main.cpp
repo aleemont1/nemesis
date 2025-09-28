@@ -12,18 +12,18 @@
 #include <ILogger.hpp>
 #include <ITransmitter.hpp>
 #include <BNO055Sensor.hpp>
+#include <MPRLSSensor.hpp>
 #include <MS561101BA03.hpp>
-#include <LIS3DHTRSensor.hpp>
-#include <GPS.hpp>
 #include <RocketLogger.hpp>
+#include <GPS.hpp>
 #include <E220LoRaTransmitter.hpp>
 #include <KalmanFilter1D.hpp>
 #include <RocketFSM.hpp>
-#include <Logger.hpp> // Make sure this path is correct
 
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "esp_task_wdt.h"
+#include "Logger.hpp"
 
 // Add global variables for health monitoring
 static uint32_t lastFreeHeap = 0;
@@ -35,11 +35,10 @@ static uint32_t crashCounter = 0;
 using TransmitDataType = std::variant<char *, String, std::string, nlohmann::json>;
 
 // Global component instances - these match the extern declarations in RocketFSM.cpp
-ISensor *bno055 = nullptr;
-ISensor *baro1 = nullptr;
-ISensor *baro2 = nullptr;
-ISensor *accl = nullptr;
-ISensor *gps = nullptr;
+std::shared_ptr<ISensor> bno055 = nullptr;
+std::shared_ptr<ISensor> baro1 = nullptr;
+std::shared_ptr<ISensor> baro2 = nullptr;
+std::shared_ptr<ISensor> gps = nullptr;
 ILogger *rocketLogger = nullptr;
 ITransmitter<TransmitDataType> *loraTransmitter = nullptr;
 KalmanFilter1D *ekf = nullptr;
@@ -48,14 +47,11 @@ KalmanFilter1D *ekf = nullptr;
 HardwareSerial loraSerial(LORA_SERIAL);
 
 // FSM instance
-RocketFSM rocketFSM;
+static std::unique_ptr<RocketFSM> rocketFSM = nullptr;
 
 // Utility functions
-void testFSMTransitions(RocketFSM &fsm);
 void tcaSelect(uint8_t bus);
 void initializeComponents();
-void sensorsCalibration();
-void initializeKalman();
 void printSystemInfo();
 void createHealthMonitorTask();
 
@@ -126,14 +122,14 @@ void testFSMTransitions(RocketFSM &fsm)
 void setup()
 {
     // Initialize basic hardware
-    Serial.begin(SERIAL_BAUD_RATE);
+    Serial.begin(115200);
     while (!Serial && millis() < 5000)
     {
         delay(10); // Wait for serial or timeout after 5 seconds
     }
 
-    Serial.println("\n=== Aurora Rocketry Flight Software ===");
-    Serial.println("Initializing system...");
+    LOG_INFO("Main", "=== Aurora Rocketry Flight Software ===");
+    LOG_INFO("Main", "Initializing system...");
 
     // Initialize pins
     pinMode(LED_RED, OUTPUT);
@@ -146,30 +142,27 @@ void setup()
 
     // Initialize I2C
     Wire.begin();
-    Serial.println("I2C initialized");
+    LOG_INFO("Main", "I2C initialized");
 
-    // Initialize components
+    // Initialize components first
     initializeComponents();
-
-    // Checking sensors calibration
-    sensorsCalibration();
-
-    // Initialize kalman
-    initializeKalman();
 
     // Print system information
     printSystemInfo();
 
-    // Initialize and start FSM
-    Serial.println("\n=== Initializing Flight State Machine ===");
-    rocketFSM.init();
+    // Create FSM with sensor shared pointers AFTER sensors are initialized
+    LOG_INFO("Main", "=== Creating Flight State Machine ===");
+    rocketFSM = std::make_unique<RocketFSM>(bno055, baro1, baro2, gps);
+    // Initialize FSM
+    LOG_INFO("Main", "=== Initializing Flight State Machine ===");
+    rocketFSM->init();
 
     // Give system a moment to stabilize
     delay(1000);
-    testFSMTransitions(rocketFSM);
+    testFSMTransitions(*rocketFSM);
     delay(1000);
     // Start FSM tasks
-    rocketFSM.start();
+    rocketFSM->start();
 
     // Signal successful initialization
     digitalWrite(LED_RED, LOW);
@@ -199,12 +192,12 @@ void loop()
 
         // Optional: Print current state periodically
         static RocketState lastLoggedState = RocketState::INACTIVE;
-        RocketState currentState = rocketFSM.getCurrentState();
+        RocketState currentState = rocketFSM->getCurrentState();
 
         if (currentState != lastLoggedState)
         {
-            Serial.printf("\n[MAIN] Current FSM State: %s (Runtime: %lu ms)\n",
-                          rocketFSM.getStateString(currentState).c_str(), millis());
+            LOG_INFO("Main", "Current FSM State: %s (Runtime: %lu ms)",
+                     rocketFSM->getStateString(currentState).c_str(), millis());
             lastLoggedState = currentState;
         }
     }
@@ -213,129 +206,78 @@ void loop()
     delay(100);
 }
 
-void testFSMTransitions(RocketFSM &fsm)
-{
-    Serial.println("\n\n=== STARTING AUTOMATED FSM TEST ===");
-    Serial.println("Testing all state transitions with automatic timeouts");
-    Serial.println("Will cycle through all states, observing task execution\n");
-
-    // Il test inizia automaticamente quando fsm.start() viene chiamato
-    // Le transizioni sono tutte temporizzate nei metodi is*() modificati
-
-    // Rendi i log più visibili
-    fsm.start();
-
-    // Mostra lo stato ogni secondo
-    for (int i = 0; i < 50; i++)
-    {
-        RocketState currentState = fsm.getCurrentState();
-        Serial.printf("[TEST] Current state: %s (runtime: %lu ms)\n",
-                      fsm.getStateString(currentState).c_str(), millis());
-
-        // Termina il test quando raggiungiamo lo stato RECOVERED
-        if (currentState == RocketState::RECOVERED)
-        {
-            Serial.println("\n=== FSM TEST COMPLETED SUCCESSFULLY ===");
-            Serial.println("All states were visited in the correct order!");
-            break;
-        }
-
-        delay(1000);
-    }
-}
-
 void initializeComponents()
 {
-    Serial.println("\n--- Initializing Components ---");
-
-    // Initialize logger first
-    rocketLogger = new RocketLogger();
-    if (rocketLogger)
-    {
-        rocketLogger->logInfo("RocketLogger initialized");
-        Serial.println("✓ Logger initialized");
-    }
-    else
-    {
-        Serial.println("✗ Failed to initialize logger");
-    }
-
-    // Initialize sensors
-    Serial.println("Initializing sensors...");
+    LOG_INFO("Init", "--- Initializing Components ---");
 
     // Initialize BNO055 (IMU)
-    bno055 = new BNO055Sensor();
+    bno055 = std::make_shared<BNO055Sensor>();
     if (bno055 && bno055->init())
     {
-        Serial.println("✓ BNO055 (IMU) initialized");
+        LOG_INFO("Init", "✓ BNO055 (IMU) initialized");
         if (rocketLogger)
             rocketLogger->logInfo("BNO055 sensor initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize BNO055");
-        if (rocketLogger)
-            rocketLogger->logError("Failed to initialize BNO055");
+        LOG_ERROR("Init", "✗ Failed to initialize BNO055");
+        bno055 = nullptr; // Clear the shared_ptr on failure
     }
 
     // Initialize barometers
-    // tcaSelect(I2C_MULTIPLEXER_MPRLS1);
-    baro1 = new MS561101BA03(0x76);
+    baro1 = std::make_shared<MS561101BA03>(0x76);
     if (baro1 && baro1->init())
     {
-        Serial.println("✓ MPRLS1 (Barometer 1) initialized");
+        LOG_INFO("Init", "✓ MPRLS1 (Barometer 1) initialized");
         if (rocketLogger)
             rocketLogger->logInfo("MPRLS1 sensor initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize MPRLS1");
-        if (rocketLogger)
-            rocketLogger->logError("Failed to initialize MPRLS1");
+        LOG_ERROR("Init", "✗ Failed to initialize MPRLS1");
+        baro1 = nullptr;
     }
 
-    // tcaSelect(I2C_MULTIPLEXER_MPRLS2);
-    baro2 = new MS561101BA03(0x77);
+    baro2 = std::make_shared<MS561101BA03>(0x77);
     if (baro2 && baro2->init())
     {
-        Serial.println("✓ MPRLS2 (Barometer 2) initialized");
+        LOG_INFO("Init", "✓ MPRLS2 (Barometer 2) initialized");
         if (rocketLogger)
             rocketLogger->logInfo("MPRLS2 sensor initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize MPRLS2");
-        if (rocketLogger)
-            rocketLogger->logError("Failed to initialize MPRLS2");
+        LOG_ERROR("Init", "✗ Failed to initialize MPRLS2");
+        baro2 = nullptr;
     }
 
-    // Initialize accelerometer
-    accl = new LIS3DHTRSensor();
-    if (accl && accl->init())
+    gps = std::make_shared<GPS>();
+    if (gps && gps->init())
     {
-        Serial.println("✓ LIS3DHTR (Accelerometer) initialized");
+        LOG_INFO("Init", "✓ GPS initialized");
         if (rocketLogger)
-            rocketLogger->logInfo("LIS3DHTR sensor initialized");
+            rocketLogger->logInfo("GPS sensor initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize LIS3DHTR");
+        LOG_ERROR("Init", "✗ Failed to initialize GPS");
         if (rocketLogger)
-            rocketLogger->logError("Failed to initialize LIS3DHTR");
+            rocketLogger->logError("Failed to initialize GPS");
     }
+    // ... rest of initialization
 
     // Initialize GPS
-    gps = new GPS();
-    if (gps && gps->init()) {
-        Serial.println("✓ GPS initialized");
-        if (rocketLogger) rocketLogger->logInfo("GPS sensor initialized");
-    } else {
-        Serial.println("✗ Failed to initialize GPS");
-        if (rocketLogger) rocketLogger->logError("Failed to initialize GPS");
-    }
+    // gps = new GPSSensor(); // Uncomment when GPS sensor is available
+    // if (gps && gps->init()) {
+    //     Serial.println("✓ GPS initialized");
+    //     if (rocketLogger) rocketLogger->logInfo("GPS sensor initialized");
+    // } else {
+    //     Serial.println("✗ Failed to initialize GPS");
+    //     if (rocketLogger) rocketLogger->logError("Failed to initialize GPS");
+    // }
 
     // Initialize LoRa transmitter
-    Serial.println("Initializing LoRa transmitter...");
+    LOG_INFO("Main", "Initializing LoRa transmitter...");
     loraSerial.begin(SERIAL_BAUD_RATE, SERIAL_8N1, LORA_RX, LORA_TX);
 
     loraTransmitter = new E220LoRaTransmitter(loraSerial, LORA_AUX, LORA_M0, LORA_M1);
@@ -343,239 +285,54 @@ void initializeComponents()
     {
         auto transmitterStatus = loraTransmitter->init();
         // Log transmitter status based on your implementation
-        Serial.println("✓ LoRa transmitter initialized");
+        LOG_INFO("Main", "✓ LoRa transmitter initialized");
         if (rocketLogger)
             rocketLogger->logInfo("LoRa transmitter initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize LoRa transmitter");
+        LOG_ERROR("Main", "✗ Failed to initialize LoRa transmitter");
         if (rocketLogger)
             rocketLogger->logError("Failed to initialize LoRa transmitter");
     }
-}
-
-// Function to check sensors calibration
-void sensorsCalibration()
-{
-    Serial.println("Calibrating BNO055 sensors...");
-    
-    if (bno055)
-    {
-        auto bnoData = bno055->getData();
-        
-        if (!bnoData.has_value()) {
-            Serial.println("BNO055 not initialized, skipping calibration.");
-            return;
-        }
-        
-        auto sensorData = bnoData.value();
-        auto gyro_cal_opt = sensorData.getData("gyro_calibration");
-        auto accel_cal_opt = sensorData.getData("accel_calibration");
-        auto mag_cal_opt = sensorData.getData("mag_calibration");
-        
-        if (!gyro_cal_opt.has_value() || 
-            !accel_cal_opt.has_value() || !mag_cal_opt.has_value()) {
-            Serial.println("Could not read calibration status, skipping calibration.");
-            return;
-        }
-        
-        auto gyro_cal = std::get<uint8_t>(gyro_cal_opt.value());
-        auto accel_cal = std::get<uint8_t>(accel_cal_opt.value());
-        auto mag_cal = std::get<uint8_t>(mag_cal_opt.value());
-        
-        // Find minimum calibration status
-        uint8_t min_calibration = std::min({gyro_cal, accel_cal, mag_cal});
-        
-        if (min_calibration < 3)
-        {
-            Serial.println("Calibrating BNO055's gyro...");
-            if (rocketLogger)
-                rocketLogger->logInfo("Calibrating BNO055's gyro...");
-            do
-            {
-                sensorData = bno055->getData().value();
-                gyro_cal_opt = sensorData.getData("gyro_calibration");
-                gyro_cal = std::get<uint8_t>(gyro_cal_opt.value());
-
-                Serial.printf("Current Gyro calibration status: %d/3\n", gyro_cal);
-                Serial.println("1. Move the sensor in a figure-8 pattern for few seconds.");
-                Serial.println("2. Rotate the sensor around all axes.");
-                Serial.println("3. Keep the sensor still on a flat surface.");
-            } while(gyro_cal < 3);
-
-            Serial.println("Calibrating BNO055's accel...");
-            if (rocketLogger)
-                rocketLogger->logInfo("Calibrating BNO055's accel...");
-            do
-            {
-                sensorData = bno055->getData().value();
-                accel_cal_opt = sensorData.getData("accel_calibration");
-                accel_cal = std::get<uint8_t>(accel_cal_opt.value());
-
-                Serial.printf("Current Accel calibration status: %d/3\n", accel_cal);
-                Serial.println("1. Move the sensor in a figure-8 pattern for few seconds.");
-                Serial.println("2. Rotate the sensor around all axes.");
-                Serial.println("3. Keep the sensor still on a flat surface.");
-            } while(accel_cal < 3);
-
-            Serial.println("Calibrating BNO055's mag...");
-            if (rocketLogger)
-                rocketLogger->logInfo("Calibrating BNO055's mag...");
-            do
-            {
-                sensorData = bno055->getData().value();
-                mag_cal_opt = sensorData.getData("mag_calibration");
-                mag_cal = std::get<uint8_t>(mag_cal_opt.value());
-
-                Serial.printf("Current Mag calibration status: %d/3\n", mag_cal);
-                Serial.println("1. Move the sensor in a figure-8 pattern for few seconds.");
-                Serial.println("2. Rotate the sensor around all axes.");
-                Serial.println("3. Keep the sensor still on a flat surface.");
-            } while(mag_cal < 3);
-
-            Serial.println("BNO055 calibration complete.");
-            if (rocketLogger)
-                rocketLogger->logInfo("BNO055 calibration complete");
-        }
-        else
-        {
-            Serial.println("BNO055 already calibrated.");
-        }
-    }
-    else
-    {
-        Serial.println("BNO055 not initialized, skipping calibration.");
-    }
-
-    Serial.println("Sensor calibration complete.");
-}
-
-// Utility function to calculate mean sensor readings
-Eigen::Vector3f calculateMean(const std::vector<Eigen::Vector3f>& readings) {
-    Eigen::Vector3f mean = Eigen::Vector3f::Zero();
-    for (const auto& reading : readings) {
-        mean += reading;
-    }
-    mean /= readings.size();
-    return mean;
-}
-
-// Utility function to calculate standard deviation of sensor readings
-Eigen::Vector3f calculateStandardDeviation(const std::vector<Eigen::Vector3f>& readings) {
-    Eigen::Vector3f mean = calculateMean(readings);
-    Eigen::Vector3f variance = Eigen::Vector3f::Zero();
-    for (const auto& reading : readings) {
-        Eigen::Vector3f diff = reading - mean;
-        variance += diff.cwiseProduct(diff);
-    }
-    variance /= static_cast<float>(readings.size() - 1);
-    return variance.cwiseSqrt();
-}
-
-// Finish implementation !!!
-void initializeKalman()
-{
-    // Store calibration samples
-    std::vector<Eigen::Vector3f> accelSamples;
-    std::vector<Eigen::Vector3f> magSamples;
-    Serial.println("Collecting calibration samples for Kalman Filter...");
-    if (rocketLogger)
-        rocketLogger->logInfo("Collecting calibration samples for Kalman Filter...");
-
-    for (int i = 0; i < NUM_CALIBRATION_SAMPLES; i++)
-    {
-        if (accl)
-        {
-            auto acclDataOpt = accl->getData();
-            if (acclDataOpt.has_value())
-            {
-                auto acclData = acclDataOpt.value();
-                // LIS3DHTR sensor uses "accel_x", "accel_y", "accel_z" keys
-                auto x_opt = acclData.getData("accel_x");
-                auto y_opt = acclData.getData("accel_y");
-                auto z_opt = acclData.getData("accel_z");
-                
-                if (x_opt.has_value() && y_opt.has_value() && z_opt.has_value())
-                {
-                    float x = std::get<float>(x_opt.value());
-                    float y = std::get<float>(y_opt.value());
-                    float z = std::get<float>(z_opt.value());
-
-                    accelSamples.push_back(Eigen::Vector3f(x, y, z));
-                }
-            }
-        }
-
-        if (bno055)
-        {
-            auto bnoDataOpt = bno055->getData();
-            if (bnoDataOpt.has_value())
-            {
-                auto bnoData = bnoDataOpt.value();
-                auto mag_opt = bnoData.getData("magnetometer");
-                if (mag_opt.has_value())
-                {
-                    auto magMap = std::get<std::map<std::string, float>>(mag_opt.value());
-
-                    magSamples.push_back(Eigen::Vector3f(magMap["x"], magMap["y"], magMap["z"]));
-                }
-            }
-        }
-
-        delay(50);
-    }
-
-    // Evaluate quality of collected samples through stddev and STD_THRESHOLD
-    auto accelStdDev = calculateStandardDeviation(accelSamples);
-    auto magStdDev = calculateStandardDeviation(magSamples);
-
-    if (accelStdDev.norm() > STD_THRESHOLD) {
-        rocketLogger->logWarning("High accelerometer noise during calibration: " + std::to_string(accelStdDev.norm()));
-    }
-
-    if (magStdDev.norm() > STD_THRESHOLD) {
-        rocketLogger->logWarning("High magnetometer noise during calibration: " + std::to_string(magStdDev.norm()));
-    }
-
-    auto accelMean = calculateMean(accelSamples);
-    auto magMean = calculateMean(magSamples);
 
     // Initialize Kalman Filter
-    Serial.println("Initializing Kalman Filter...");
-    ekf = new KalmanFilter1D(accelMean, magMean);
+    LOG_INFO("Main", "Initializing Kalman Filter...");
+    Eigen::Vector3f gravity(0, 0, GRAVITY);
+    Eigen::Vector3f magnetometer(1, 0, 0); // Placeholder values
+    ekf = new KalmanFilter1D(gravity, magnetometer);
     if (ekf)
     {
-        Serial.println("✓ Kalman Filter initialized");
+        LOG_INFO("Main", "✓ Kalman Filter initialized");
         if (rocketLogger)
             rocketLogger->logInfo("Kalman Filter initialized");
     }
     else
     {
-        Serial.println("✗ Failed to initialize Kalman Filter");
+        LOG_ERROR("Main", "✗ Failed to initialize Kalman Filter");
         if (rocketLogger)
             rocketLogger->logError("Failed to initialize Kalman Filter");
     }
 
-    Serial.println("--- Component initialization complete ---");
+    LOG_INFO("Main", "--- Component initialization complete ---");
 }
 
 void printSystemInfo()
 {
-    Serial.println("\n--- System Information ---");
-    Serial.printf("ESP32 Chip: %s\n", ESP.getChipModel());
-    Serial.printf("CPU Frequency: %d MHz\n", ESP.getCpuFreqMHz());
-    Serial.printf("Total Heap: %d bytes\n", ESP.getHeapSize());
-    Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
-    Serial.printf("PSRAM Total: %d bytes\n", ESP.getPsramSize());
-    Serial.printf("PSRAM Free: %d bytes\n", ESP.getFreePsram());
-    Serial.printf("Flash Size: %d bytes\n", ESP.getFlashChipSize());
-    Serial.printf("SDK Version: %s\n", ESP.getSdkVersion());
+    LOG_INFO("Main", "--- System Information ---");
+    LOG_DEBUG("Main", "ESP32 Chip: %s", ESP.getChipModel());
+    LOG_DEBUG("Main", "CPU Frequency: %d MHz", ESP.getCpuFreqMHz());
+    LOG_DEBUG("Main", "Total Heap: %d bytes", ESP.getHeapSize());
+    LOG_DEBUG("Main", "Free Heap: %d bytes", ESP.getFreeHeap());
+    LOG_DEBUG("Main", "PSRAM Total: %d bytes", ESP.getPsramSize());
+    LOG_DEBUG("Main", "PSRAM Free: %d bytes", ESP.getFreePsram());
+    LOG_DEBUG("Main", "Flash Size: %d bytes", ESP.getFlashChipSize());
+    LOG_DEBUG("Main", "SDK Version: %s", ESP.getSdkVersion());
 
     // FreeRTOS information
-    LOG_INFO("SysInfo", "FreeRTOS running on %d cores", portNUM_PROCESSORS);
-    LOG_INFO("SysInfo", "Tick rate: %d Hz", configTICK_RATE_HZ);
-    LOG_INFO("SysInfo", "--- End System Information ---");
+    LOG_DEBUG("Main", "FreeRTOS running on %d cores", portNUM_PROCESSORS);
+    LOG_DEBUG("Main", "Tick rate: %d Hz", configTICK_RATE_HZ);
+    LOG_INFO("Main", "--- End System Information ---");
 }
 
 /**
@@ -643,7 +400,7 @@ void createHealthMonitorTask()
                 static UBaseType_t lastTaskCount = 0;
 
                 // Get current FSM state
-                RocketState currentState = rocketFSM.getCurrentState();
+                RocketState currentState = rocketFSM->getCurrentState();
                 static RocketState lastState = RocketState::INACTIVE;
                 static unsigned long stateChangeTime = millis();
 
@@ -651,8 +408,8 @@ void createHealthMonitorTask()
                 {
                     unsigned long timeInState = millis() - stateChangeTime;
                     LOG_INFO("HealthMon", "State change: %s -> %s (was in previous state for %lu ms)",
-                             rocketFSM.getStateString(lastState).c_str(),
-                             rocketFSM.getStateString(currentState).c_str(),
+                             rocketFSM->getStateString(lastState).c_str(),
+                             rocketFSM->getStateString(currentState).c_str(),
                              timeInState);
                     lastState = currentState;
                     stateChangeTime = millis();
@@ -722,9 +479,9 @@ void createHealthMonitorTask()
                     LOG_INFO("HealthMon", "Fragmentation: %.1f%%, Largest block: %u bytes",
                              fragmentation, largestBlock);
                     LOG_INFO("HealthMon", "Tasks: Count=%u, CPU=%uMHz, State=%s",
-                             taskCount, cpuFreq, rocketFSM.getStateString(currentState).c_str());
+                             taskCount, cpuFreq, rocketFSM->getStateString(currentState).c_str());
                     LOG_INFO("HealthMon", "Phase: %d, Time in current state: %lu ms",
-                             static_cast<int>(rocketFSM.getCurrentPhase()),
+                             static_cast<int>(rocketFSM->getCurrentPhase()),
                              millis() - stateChangeTime);
 
                     // PSRAM info if available
@@ -742,7 +499,7 @@ void createHealthMonitorTask()
                         if (freeHeap < 4096)
                         { // Less than 4KB - emergency stop
                             LOG_ERROR("HealthMon", "EMERGENCY: Stopping FSM due to critical memory shortage");
-                            rocketFSM.stop();
+                            rocketFSM->stop();
 
                             // Try to free some memory
                             LOG_ERROR("HealthMon", "Attempting emergency cleanup...");
@@ -763,7 +520,7 @@ void createHealthMonitorTask()
                 {
                     LOG_INFO("HealthMon", "Health: Free=%uKB, Frag=%.1f%%, Tasks=%u, State=%s%s",
                              freeHeap / 1024, fragmentation, taskCount,
-                             rocketFSM.getStateString(currentState).c_str(),
+                             rocketFSM->getStateString(currentState).c_str(),
                              alertMsg.length() > 0 ? " [ALERTS]" : "");
                 }
 
@@ -824,13 +581,13 @@ void monitorTasks()
 
             if (command == "stop")
             {
-                Serial.println("Manual FSM stop requested");
-                rocketFSM.stop();
+                LOG_INFO("Monitor", "Manual FSM stop requested");
+                rocketFSM->stop();
             }
             else if (command == "start")
             {
-                Serial.println("Manual FSM start requested");
-                rocketFSM.start();
+                LOG_INFO("Monitor", "Manual FSM start requested");
+                rocketFSM->start();
             }
             else if (command == "health")
             {
@@ -838,7 +595,7 @@ void monitorTasks()
                 LOG_INFO("Monitor", "Manual health check requested");
                 Logger::debugMemory("Manual health check");
                 LOG_INFO("Monitor", "Current state: %s, Tasks: %u",
-                         rocketFSM.getStateString(rocketFSM.getCurrentState()).c_str(),
+                         rocketFSM->getStateString(rocketFSM->getCurrentState()).c_str(),
                          uxTaskGetNumberOfTasks());
             }
             else if (command.startsWith("force "))
@@ -848,15 +605,15 @@ void monitorTasks()
 
                 if (stateName == "LAUNCH")
                 {
-                    rocketFSM.forceTransition(RocketState::LAUNCH);
+                    rocketFSM->forceTransition(RocketState::LAUNCH);
                 }
                 else if (stateName == "APOGEE")
                 {
-                    rocketFSM.forceTransition(RocketState::APOGEE);
+                    rocketFSM->forceTransition(RocketState::APOGEE);
                 }
                 else if (stateName == "RECOVERED")
                 {
-                    rocketFSM.forceTransition(RocketState::RECOVERED);
+                    rocketFSM->forceTransition(RocketState::RECOVERED);
                 }
                 else
                 {
