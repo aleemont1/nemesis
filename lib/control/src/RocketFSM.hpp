@@ -61,7 +61,7 @@ public:
     bool isFinished() override;
 
     // Utility methods
-    String getStateString(RocketState state) const;
+    const char* getStateString(RocketState state) const;
 
 private:
     void setupStateActions();

@@ -82,7 +82,7 @@ void RocketFSM::init()
     LOG_INFO("RocketFSM", "Initializing...");
 
     // Initialize watchdog timer
-    esp_task_wdt_init(10, true); // 10 second timeout
+    esp_task_wdt_init(60000, true); // 60 second timeout
 
     // Create FreeRTOS objects
     eventQueue = xQueueCreate(EVENT_QUEUE_SIZE, sizeof(FSMEventData));
@@ -111,7 +111,15 @@ void RocketFSM::init()
         return;
     }
     // Initialize managers
-    taskManager = std::make_unique<TaskManager>(sharedData, kalmanFilter, bno055, baro1, baro2, gps, sensorDataMutex);
+    taskManager = std::make_unique<TaskManager>(
+        sharedData,     // sensorData
+        kalmanFilter,   // kalmanFilter
+        bno055,         // imu
+        baro1,          // barometer1
+        baro2,          // barometer2
+        gps,            // gpsModule
+        sensorDataMutex // sensorMutex
+    );
     taskManager->initializeTasks();
 
     transitionManager = std::make_unique<TransitionManager>();
@@ -142,7 +150,7 @@ void RocketFSM::start()
     BaseType_t result = xTaskCreate(
         fsmTaskWrapper,
         "FSM_Task",
-        3072, // Stack size
+        4096, // Stack size
         this, // Parameter
         2,    // Priority
         &fsmTaskHandle);
@@ -196,7 +204,7 @@ bool RocketFSM::sendEvent(FSMEvent event, RocketState targetState, void *eventDa
 
     FSMEventData eventMsg(event, targetState, eventData);
 
-    BaseType_t result = xQueueSend(eventQueue, &eventMsg, pdMS_TO_TICKS(100));
+    BaseType_t result = xQueueSend(eventQueue, &eventMsg, 0);
     if (result == pdPASS)
     {
         LOG_INFO("RocketFSM", "Event %d sent successfully", static_cast<int>(event));
@@ -250,7 +258,7 @@ FlightPhase RocketFSM::getCurrentPhase()
 
 void RocketFSM::forceTransition(RocketState newState)
 {
-    LOG_INFO("RocketFSM", "Force transition to %s", getStateString(newState).c_str());
+    LOG_INFO("RocketFSM", "Force transition to %s", getStateString(newState));
     sendEvent(FSMEvent::FORCE_TRANSITION, newState);
 }
 
@@ -259,35 +267,20 @@ bool RocketFSM::isFinished()
     return getCurrentState() == RocketState::RECOVERED;
 }
 
-String RocketFSM::getStateString(RocketState state) const
+const char *RocketFSM::getStateString(RocketState state) const
 {
-    switch (state)
+    // Use const char* instead of String to avoid heap allocation
+    static const char *stateStrings[] = {
+        "INACTIVE", "CALIBRATING", "READY_FOR_LAUNCH", "LAUNCH",
+        "ACCELERATED_FLIGHT", "BALLISTIC_FLIGHT", "APOGEE",
+        "STABILIZATION", "DECELERATION", "LANDING", "RECOVERED"};
+
+    int index = static_cast<int>(state);
+    if (index >= 0 && index < 11)
     {
-    case RocketState::INACTIVE:
-        return "INACTIVE";
-    case RocketState::CALIBRATING:
-        return "CALIBRATING";
-    case RocketState::READY_FOR_LAUNCH:
-        return "READY_FOR_LAUNCH";
-    case RocketState::LAUNCH:
-        return "LAUNCH";
-    case RocketState::ACCELERATED_FLIGHT:
-        return "ACCELERATED_FLIGHT";
-    case RocketState::BALLISTIC_FLIGHT:
-        return "BALLISTIC_FLIGHT";
-    case RocketState::APOGEE:
-        return "APOGEE";
-    case RocketState::STABILIZATION:
-        return "STABILIZATION";
-    case RocketState::DECELERATION:
-        return "DECELERATION";
-    case RocketState::LANDING:
-        return "LANDING";
-    case RocketState::RECOVERED:
-        return "RECOVERED";
-    default:
-        return "UNKNOWN";
+        return stateStrings[index];
     }
+    return "UNKNOWN";
 }
 
 void RocketFSM::setupStateActions()
@@ -306,8 +299,8 @@ void RocketFSM::setupStateActions()
                          { LOG_INFO("RocketFSM", "Entering CALIBRATING"); })
         .setExitAction([this]()
                        { LOG_INFO("RocketFSM", "Exiting CALIBRATING"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Calib1", 4096, TaskPriority::TASK_MEDIUM, TaskCore::CORE_1, true))
-        .addTask(TaskConfig(TaskType::GPS, "Gps_Calib", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Calib1", 4096, TaskPriority::TASK_MEDIUM, TaskCore::CORE_0, true));
+    //.addTask(TaskConfig(TaskType::GPS, "Gps_Calib", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
     // READY_FOR_LAUNCH state
     stateActions[RocketState::READY_FOR_LAUNCH] = std::make_unique<StateAction>(RocketState::READY_FOR_LAUNCH);
     stateActions[RocketState::READY_FOR_LAUNCH]
@@ -326,7 +319,8 @@ void RocketFSM::setupStateActions()
     stateActions[RocketState::ACCELERATED_FLIGHT]
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering ACCELERATED_FLIGHT"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));    // BALLISTIC_FLIGHT state
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
+
     stateActions[RocketState::BALLISTIC_FLIGHT] = std::make_unique<StateAction>(RocketState::BALLISTIC_FLIGHT);
     stateActions[RocketState::BALLISTIC_FLIGHT]
         ->setEntryAction([this]()
@@ -337,7 +331,7 @@ void RocketFSM::setupStateActions()
     stateActions[RocketState::APOGEE]
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering APOGEE"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
 
     stateActions[RocketState::STABILIZATION] = std::make_unique<StateAction>(RocketState::STABILIZATION);
     stateActions[RocketState::STABILIZATION]
@@ -349,7 +343,7 @@ void RocketFSM::setupStateActions()
     stateActions[RocketState::DECELERATION]
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering DECELERATION"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
 
     stateActions[RocketState::LANDING] = std::make_unique<StateAction>(RocketState::LANDING);
     stateActions[RocketState::LANDING]
@@ -360,7 +354,7 @@ void RocketFSM::setupStateActions()
     stateActions[RocketState::RECOVERED]
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering RECOVERED"); })
-        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_PostFlight", 4096, TaskPriority::TASK_LOW, TaskCore::CORE_1, true));
+        .addTask(TaskConfig(TaskType::SENSOR, "Sensor_PostFlight", 4096, TaskPriority::TASK_LOW, TaskCore::CORE_0, true));
     LOG_INFO("RocketFSM", "State actions setup complete");
 }
 
@@ -435,16 +429,24 @@ void RocketFSM::setupTransitions()
 
 void RocketFSM::transitionTo(RocketState newState)
 {
+    if (isTransitioning)
+    {
+        LOG_WARNING("RocketFSM", "Already transitioning, ignoring");
+        return;
+    }
+
     if (newState == currentState)
     {
         return;
     }
 
+    isTransitioning = true;
+
     if (xSemaphoreTake(stateMutex, pdMS_TO_TICKS(1000)) == pdTRUE)
     {
         LOG_INFO("RocketFSM", "[TRANSITION] %s -> %s",
-                 getStateString(currentState).c_str(),
-                 getStateString(newState).c_str());
+                 getStateString(currentState),
+                 getStateString(newState));
 
         // Execute exit action for current state
         if (stateActions[currentState])
@@ -453,7 +455,18 @@ void RocketFSM::transitionTo(RocketState newState)
         }
 
         // Stop current tasks
-        taskManager->stopAllTasks();
+        if (taskManager)
+        {
+            try
+            {
+                taskManager->stopAllTasks();
+                vTaskDelay(pdMS_TO_TICKS(100)); // Give some time for tasks to stop
+            }
+            catch (const std::exception &e)
+            {
+                LOG_ERROR("RocketFSM", "[TRANSITION] ERROR: Exception while stopping tasks: %s", e.what());
+            }
+        }
 
         // Update state
         previousState = currentState;
@@ -483,19 +496,19 @@ void RocketFSM::transitionTo(RocketState newState)
     {
         LOG_ERROR("RocketFSM", "[TRANSITION] ERROR: Failed to acquire state mutex");
     }
+    isTransitioning = false;
 }
 
 void RocketFSM::processEvent(const FSMEventData &eventData)
 {
-    debugMemory("Before processEvent");
     LOG_INFO("RocketFSM", "Processing event %d in state %s",
              static_cast<int>(eventData.event),
-             getStateString(currentState).c_str());
+             getStateString(currentState));
 
     if (eventData.event == FSMEvent::FORCE_TRANSITION)
     {
         LOG_INFO("RocketFSM", "Force transition to %s",
-                 getStateString(eventData.targetState).c_str());
+                 getStateString(eventData.targetState));
         transitionTo(eventData.targetState);
         return;
     }
@@ -508,9 +521,9 @@ void RocketFSM::processEvent(const FSMEventData &eventData)
     }
     else
     {
-        LOG_ERROR("RocketFSM", "No valid transition for event %d in state %s",
-                  static_cast<int>(eventData.event),
-                  getStateString(currentState).c_str());
+        LOG_WARNING("RocketFSM", "No valid transition for event %d in state %s",
+                    static_cast<int>(eventData.event),
+                    getStateString(currentState));
     }
 }
 
@@ -606,7 +619,6 @@ void RocketFSM::checkTransitions()
 
 void RocketFSM::fsmTaskWrapper(void *parameter)
 {
-    esp_task_wdt_add(NULL);
 
     RocketFSM *fsm = static_cast<RocketFSM *>(parameter);
     if (fsm)
@@ -614,7 +626,6 @@ void RocketFSM::fsmTaskWrapper(void *parameter)
         fsm->fsmTask();
     }
 
-    esp_task_wdt_delete(NULL);
     vTaskDelete(NULL);
 }
 
@@ -625,33 +636,56 @@ void RocketFSM::fsmTask()
     FSMEventData eventData(FSMEvent::NONE);
     TickType_t xLastWakeTime = xTaskGetTickCount();
     unsigned long loopCounter = 0;
+    esp_task_wdt_add(NULL);
 
     while (isRunning)
     {
         esp_task_wdt_reset();
 
+        if (isTransitioning)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
         // Check for automatic transitions
         checkTransitions();
 
         // Process events from queue
-        if (xQueueReceive(eventQueue, &eventData, pdMS_TO_TICKS(50)) == pdPASS)
+        if (eventQueue && xQueueReceive(eventQueue, &eventData, pdMS_TO_TICKS(50)) == pdPASS)
         {
-            processEvent(eventData);
+            if (!isTransitioning)
+            {
+                processEvent(eventData);
+            }
         }
 
         // Periodic status output
-        if (loopCounter % 20 == 0)
-        {
-            LOG_INFO("RocketFSM", "Loop %lu: State=%s, Time in state=%lu ms, Free heap=%u",
-                     loopCounter,
-                     getStateString(currentState).c_str(),
-                     millis() - stateStartTime,
-                     ESP.getFreeHeap());
-        }
+        // if (loopCounter % 20 == 0)
+        // {
+        // LOG_INFO("RocketFSM", "Loop %lu: State=%s, Time in state=%lu ms",
+        //          loopCounter,
+        //          getStateString(currentState),
+        //          millis() - stateStartTime);
+
+        // // Extended debug info for crash analysis
+        // DEBUG_PRINTF("=== EXTENDED DEBUG [Loop %lu] ===\n", loopCounter);
+        // DEBUG_PRINTF("Free heap: %u bytes (min: %u)\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
+        // DEBUG_PRINTF("Largest free block: %u bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        // DEBUG_PRINTF("Stack high water mark: %u bytes\n", uxTaskGetStackHighWaterMark(NULL));
+        // DEBUG_PRINTF("Queue messages waiting: %u\n", uxQueueMessagesWaiting(eventQueue));
+        // DEBUG_PRINTF("Task count: %u\n", uxTaskGetNumberOfTasks());
+        // DEBUG_PRINTF("Current tick count: %lu\n", xTaskGetTickCount());
+        // DEBUG_PRINTF("Uptime: %lu ms\n", millis());
+        // DEBUG_PRINTF("State transitions: %s -> %s\n",
+        //              getStateString(previousState),
+        //              getStateString(currentState));
+        // DEBUG_PRINTF("================================\n");
+        // }
 
         loopCounter++;
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(50)); // 20Hz
     }
+    esp_task_wdt_delete(NULL);
 
     LOG_INFO("RocketFSM", "Main task ended");
 }
