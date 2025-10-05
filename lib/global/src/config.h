@@ -1,4 +1,7 @@
 #pragma once
+
+#include <cstdint>
+
 #define __DEBUG__
 
 #define SUFFICIENT_SENSOR_CALIBRATION 2
@@ -63,3 +66,6 @@
 #define IMU_MINIMUM_CALIBRATION 3 // Minimum calibration level for IMU sensors (0-3)
 // Important math constants
 #define GRAVITY 9.80665f
+
+// Telemetry configuration
+constexpr uint8_t receiverAddress[] = { 0x34, 0xCD, 0xB0, 0x3C, 0x54, 0xB4 };  // MAC dell'ESP32 ricevente: // 34:CD:B0:3C:54:B4
