@@ -1,29 +1,47 @@
+// Standard libraries
 #include <Arduino.h>
 #include <Wire.h>
 #include <HardwareSerial.h>
+#include <variant>
+
+// FreeRTOS
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <variant>
+
+// WiFi and communication
+#include <WiFi.h>
+#include <esp_now.h>
+
+// Configuration and pins
 #include <config.h>
 #include <pins.h>
+
+// Interfaces
 #include <ISensor.hpp>
 #include <ILogger.hpp>
 #include <ITransmitter.hpp>
+
+// Sensors
 #include <BNO055Sensor.hpp>
 #include <MS561101BA03.hpp>
 #include <LIS3DHTRSensor.hpp>
 #include <GPS.hpp>
-#include <RocketLogger.hpp>
-#include <E220LoRaTransmitter.hpp>
-#include <KalmanFilter1D.hpp>
-#include <RocketFSM.hpp>
-#include <Logger.hpp>
+
+// Storage and logging
 #include <SD-master.hpp>
+#include <RocketLogger.hpp>
+#include <Logger.hpp>
+
+// Transmitters
+
+// Controllers and filters
 #include <LEDController.hpp>
 #include <BuzzerController.hpp>
 #include <StatusManager.hpp>
-#include <WiFi.h>
-#include <esp_now.h>
+
+// Main system
+#include <KalmanFilter1D.hpp>
+#include <RocketFSM.hpp>
 
 /**
  * @brief Uncomment to enable sensor calibration routine at startup.
@@ -126,7 +144,6 @@ void setup()
     // Initialize kalman
     statusManager.setSystemCode(CALIBRATING);
     initializeKalman();
-    statusManager.setSystemCode(SYSTEM_OK);
 
     // Print system information
     printSystemInfo();
