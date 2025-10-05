@@ -110,7 +110,7 @@ void SensorTask::taskFunction()
         // Log memory usage every 10 loops
         if (loopCount % 10 == 0)
         {
-            LOG_INFO("Sensor", "L%lu: Stack HwM:%u, Heap=%u, Memory=%u\n",
+            LOG_INFO("Sensor", "L%lu: Stack HwM:%u, Heap=%u, Memory=%u",
                           loopCount, uxTaskGetStackHighWaterMark(NULL), ESP.getFreeHeap(),
                           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         }
