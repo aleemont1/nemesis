@@ -54,7 +54,12 @@ void GpsTask::taskFunction()
         }
 
         loopCounter++;
-        vTaskDelay(pdMS_TO_TICKS(200)); // 5 Hz
+        
+        // Split 200ms delay into 20x10ms chunks for faster exit (still 5 Hz)
+        for (int i = 0; i < 20 && running; i++)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
     }
     LOG_INFO("GpsTask", "Task exiting");
 }
