@@ -8,6 +8,8 @@
 #include "KalmanFilter1D.hpp"
 #include "Logger.hpp"
 #include "RocketLogger.hpp"
+#include "config.h"
+#include <SD-master.hpp>
 #include <memory>
 #include <map>
 
@@ -43,6 +45,8 @@ private:
     std::shared_ptr<ISensor> accl;
     std::shared_ptr<ISensor> gps;
 
+    std::shared_ptr<SD> sd;
+
 public:
     RocketFSM(std::shared_ptr<ISensor> imu,
               std::shared_ptr<ISensor> barometer1,
@@ -50,6 +54,7 @@ public:
               std::shared_ptr<ISensor> accelerometer,
               std::shared_ptr<ISensor> gpsModule,
               std::shared_ptr<KalmanFilter1D> kf,
+              std::shared_ptr<SD> sd,
               std::shared_ptr<RocketLogger> logger
             );
     ~RocketFSM();

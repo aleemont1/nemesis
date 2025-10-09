@@ -13,19 +13,21 @@ RocketFSM::RocketFSM(std::shared_ptr<ISensor> imu,
                      std::shared_ptr<ISensor> accelerometer,
                      std::shared_ptr<ISensor> gpsModule,
                      std::shared_ptr<KalmanFilter1D> kf,
+                     std::shared_ptr<SD> sd,
                     std::shared_ptr<RocketLogger> logger)
     : fsmTaskHandle(nullptr), eventQueue(nullptr), stateMutex(nullptr),
       currentState(RocketState::INACTIVE), previousState(RocketState::INACTIVE),
       stateStartTime(0), isRunning(false), isTransitioning(false),
       bno055(imu), baro1(barometer1), baro2(barometer2), accl(accelerometer), gps(gpsModule),
-      kalmanFilter(kf), logger(logger)
+      kalmanFilter(kf), sd(sd), logger(logger)
 {
     LOG_INFO("FSM", "Constructor called");
-    LOG_INFO("FSM", "Sensors received: IMU=%s, Baro1=%s, Baro2=%s, GPS=%s",
+    LOG_INFO("FSM", "Sensors received: IMU=%s, Baro1=%s, Baro2=%s, GPS=%s, SD=%s",
              bno055 ? "OK" : "NULL",
              baro1 ? "OK" : "NULL",
              baro2 ? "OK" : "NULL",
-             gps ? "OK" : "NULL");
+             gps ? "OK" : "NULL",
+             sd ? "OK" : "NULL");
 
     // Initialize shared data
     sharedData = std::make_shared<SharedSensorData>();
@@ -49,6 +51,18 @@ RocketFSM::~RocketFSM()
     {
         vSemaphoreDelete(stateMutex);
         stateMutex = nullptr;
+    }
+
+    if (sensorDataMutex)
+    {
+        vSemaphoreDelete(sensorDataMutex);
+        sensorDataMutex = nullptr;
+    }
+
+    if (loggerMutex)
+    {
+        vSemaphoreDelete(loggerMutex);
+        loggerMutex = nullptr;
     }
 
     LOG_INFO("RocketFSM", "Destructor completed");
@@ -87,7 +101,20 @@ void RocketFSM::init()
         stateMutex = nullptr;
         return;
     }
+    loggerMutex = xSemaphoreCreateMutex();
+    if (!loggerMutex)
+    {
+        LOG_ERROR("RocketFSM", "ERROR: Failed to create logger mutex");
+        vQueueDelete(eventQueue);
+        eventQueue = nullptr;
+        vSemaphoreDelete(stateMutex);
+        stateMutex = nullptr;
+        vSemaphoreDelete(sensorDataMutex);
+        sensorDataMutex = nullptr;
+        return;
+    }
     // Initialize managers
+    LOG_INFO("RocketFSM", "Initializing TaskManager...");
     taskManager = std::make_unique<TaskManager>(
         sharedData,     // sensorData
         kalmanFilter,   // kalmanFilter
@@ -95,10 +122,14 @@ void RocketFSM::init()
         baro1,          // barometer1
         baro2,          // barometer2
         gps,            // gpsModule
-        sensorDataMutex // sensorMutex
+        sensorDataMutex,// sensorMutex
+        sd,             // sdCard
+        logger,         // logger
+        loggerMutex     // loggerMutex
     );
+    LOG_INFO("RocketFSM", "INITIALIZING TASKS...");
     taskManager->initializeTasks();
-
+    LOG_INFO("RocketFSM", "INITIALIZING TRANSITION MANAGER...");
     transitionManager = std::make_unique<TransitionManager>();
 
     // Setup state machine configuration
@@ -321,7 +352,8 @@ void RocketFSM::setupStateActions()
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering READY_FOR_LAUNCH"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ready", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::GPS, "Gps_Ready", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
+        .addTask(TaskConfig(TaskType::GPS, "Gps_Ready", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true))
+        .addTask(TaskConfig(TaskType::SD_LOGGING, "Started_SD_Logging", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true));
 
     // LAUNCH state
     stateActions[RocketState::LAUNCH] = std::make_unique<StateAction>(RocketState::LAUNCH);
@@ -329,14 +361,14 @@ void RocketFSM::setupStateActions()
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering LAUNCH"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Launch", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Launch", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Launch", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Launch", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
     stateActions[RocketState::ACCELERATED_FLIGHT] = std::make_unique<StateAction>(RocketState::ACCELERATED_FLIGHT);
     stateActions[RocketState::ACCELERATED_FLIGHT]
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering ACCELERATED_FLIGHT"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Accel", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::BALLISTIC_FLIGHT] = std::make_unique<StateAction>(RocketState::BALLISTIC_FLIGHT);
@@ -344,7 +376,7 @@ void RocketFSM::setupStateActions()
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering BALLISTIC_FLIGHT"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Ballistic", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Ballistic", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Ballistic", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Ballistic", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::APOGEE] = std::make_unique<StateAction>(RocketState::APOGEE);
@@ -356,7 +388,7 @@ void RocketFSM::setupStateActions()
                              tone(BUZZER_PIN, 1000, 500);             // Sound buzzer at 1kHz for 500ms
                          })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Apogee", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::STABILIZATION] = std::make_unique<StateAction>(RocketState::STABILIZATION);
@@ -368,7 +400,7 @@ void RocketFSM::setupStateActions()
                              tone(BUZZER_PIN, 1000, 500);           // Sound buzzer at 1kHz for 500ms
                          })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Stabilization", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Stabilization", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Stabilization", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Stabilization", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::DECELERATION] = std::make_unique<StateAction>(RocketState::DECELERATION);
@@ -376,7 +408,7 @@ void RocketFSM::setupStateActions()
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering DECELERATION"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Deceleration", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
 
     stateActions[RocketState::LANDING] = std::make_unique<StateAction>(RocketState::LANDING);
@@ -384,7 +416,7 @@ void RocketFSM::setupStateActions()
         ->setEntryAction([this]()
                          { LOG_INFO("RocketFSM", "Entering LANDING"); })
         .addTask(TaskConfig(TaskType::SENSOR, "Sensor_Landing", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
-        .addTask(TaskConfig(TaskType::EKF, "Ekf_Landing", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
+        //.addTask(TaskConfig(TaskType::EKF, "Ekf_Landing", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_0, true))
         .addTask(TaskConfig(TaskType::GPS, "Gps_Landing", 4096, TaskPriority::TASK_HIGH, TaskCore::CORE_1, true));
     stateActions[RocketState::RECOVERED] = std::make_unique<StateAction>(RocketState::RECOVERED);
     stateActions[RocketState::RECOVERED]
@@ -610,6 +642,7 @@ void RocketFSM::checkTransitions()
     {
     case RocketState::INACTIVE:
         // Kick off calibration immediately
+        // DOES THIS MAKE SENSE ???
         sendEvent(FSMEvent::START_CALIBRATION);
         break;
 
@@ -686,23 +719,28 @@ void RocketFSM::checkTransitions()
             if (kalmanFilter)
             {
                 auto vertical_velocity = kalmanFilter->state()[STATE_INDEX_VELOCITY];
-                LOG_INFO("RocketFSM", "BALLISTIC_FLIGHT: vertical_velocity=%.3f", vertical_velocity);
-                if (vertical_velocity <= 0.0f)
+                if (vertical_velocity > MIN_ACCECTABLE_VELOCITY && vertical_velocity < MAX_ACCECTABLE_VELOCITY)
                 {
-                    if (apogeeSince == 0)
+                    LOG_INFO("RocketFSM", "BALLISTIC_FLIGHT: vertical_velocity=%.3f", vertical_velocity);
+                    if (vertical_velocity <= 0.0f)
                     {
-                        apogeeSince = millis();
+                        if (apogeeSince == 0)
+                        {
+                            apogeeSince = millis();
+                        }
+                        else if (millis() - apogeeSince > 500U)
+                        {
+                            sendEvent(FSMEvent::APOGEE_REACHED);
+                            apogeeSince = 0;
+                        }
                     }
-                    else if (millis() - apogeeSince > 500U)
+                    else
                     {
-                        sendEvent(FSMEvent::APOGEE_REACHED);
                         apogeeSince = 0;
                     }
-                }
-                else
-                {
-                    apogeeSince = 0;
-                }
+                } else {
+                    LOG_ERROR("VerticalVelocity", "The vertical velocity is is out of scale, not activating the drouge");
+                }                
             }
             break;
         }
