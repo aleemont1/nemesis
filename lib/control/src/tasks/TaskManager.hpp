@@ -14,7 +14,10 @@
 #include "SDLoggingTask.hpp"
 #include "EkfTask.hpp"
 #include "GpsTask.hpp"
+#include "SimulationTask.hpp"
 //#include "TelemetryTask.hpp"
+
+#define SIMULATION_DATA // Comment this out to use real sensors
 
 class TaskManager {
 private:

@@ -6,6 +6,7 @@
 enum class TaskType
 {
     SENSOR,
+    SIMULATION,
     EKF,
     APOGEE_DETECTION,
     RECOVERY,

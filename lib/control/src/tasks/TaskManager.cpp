@@ -57,6 +57,12 @@ void TaskManager::initializeTasks()
         rocketLogger,
         loggerMutex,
         sd);
+    tasks[TaskType::SIMULATION] = std::make_unique<SimulationTask>(
+        "/simulated_sensors_full.csv",
+        sensorData,
+        sensorDataMutex,
+        rocketLogger,
+        loggerMutex);
 
     // tasks[TaskType::TELEMETRY] = std::make_unique<TelemetryTask>(sensorData, sensorDataMutex);
 
