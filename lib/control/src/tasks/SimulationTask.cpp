@@ -15,10 +15,12 @@ SimulationTask::SimulationTask(const std::string& csvFilePathPar,
         : BaseTask("SimulationTask"), sensorData(sensorData),
             dataMutex(mutex), rocketLogger(rocketLogger), loggerMutex(loggerMutex) {
     csvFilePath = csvFilePathPar;
-    if (!sdManager.init()) {
-        sdManager.openFile(csvFilePath);
-    }
+    firstTime = true;
+    // Initialize SD card and open file
+    sdManager.init();
+    sdManager.openFile(csvFilePath);
 }
+
 
 SimulationTask::~SimulationTask() {
     // Do not close file here, keep it open for all instances
@@ -44,7 +46,6 @@ void SimulationTask::taskFunction() {
     auto now = millis();
     double elapsed = now - startTime;
 
-    // Read the next row from the file only if its timestamp <= elapsed
     if (firstTime) {
         String header = sdManager.readLine(); // skip header
         firstTime = false;
@@ -134,10 +135,9 @@ void SimulationTask::taskFunction() {
             sensorData->gpsData = gpsData;
             sensorData->timestamp = static_cast<uint32_t>(now);
             sensorData->dataValid = true;
+
+            xSemaphoreGive(dataMutex);
         }
-    } else {
-        // Not enough time has passed, rewind to previous position
-        LOG_INFO("SimulationTask", "Waiting for time to pass to read next data point.");
     }
 
     // Sleep for 100ms, which is the time gap between simulation data points
