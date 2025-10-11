@@ -58,7 +58,10 @@ void TaskManager::initializeTasks()
         loggerMutex,
         sd);
     tasks[TaskType::SIMULATION] = std::make_unique<SimulationTask>(
-        "/simulated_sensors_full.csv",
+        // Using a different simulation file where at the end of each line there is a 
+        // pipe symbol, this was needed as the readLine function had problem recognizing 
+        // the \n character, so separating each line 
+        "/simulated_sensors_full_piped.csv",
         sensorData,
         sensorDataMutex,
         rocketLogger,
