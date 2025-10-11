@@ -1,6 +1,7 @@
 // SimulationTask implementation
 #include "SimulationTask.hpp"
 #include <sstream>
+#include <algorithm>
 
 bool SimulationTask::firstTime = true;
 unsigned long SimulationTask::startTime = millis();
@@ -16,9 +17,21 @@ SimulationTask::SimulationTask(const std::string& csvFilePathPar,
             dataMutex(mutex), rocketLogger(rocketLogger), loggerMutex(loggerMutex) {
     csvFilePath = csvFilePathPar;
     firstTime = true;
+    LOG_INFO("SimulationTask", "Opening CSV file: %s", csvFilePath.c_str());
     // Initialize SD card and open file
-    sdManager.init();
-    sdManager.openFile(csvFilePath);
+    if (!sdManager.init()) {
+        LOG_ERROR("SimulationTask", "Failed to initialize SD card");
+        return;
+    }
+    if (!sdManager.fileExists(csvFilePath)) {
+        LOG_ERROR("SimulationTask", "CSV file does not exist: %s", csvFilePath.c_str());
+        return;
+    }
+    if (!sdManager.openFile(csvFilePath)) {
+        LOG_ERROR("SimulationTask", "Failed to open CSV file: %s", csvFilePath.c_str());
+        return;
+    }
+    LOG_INFO("SimulationTask", "Successfully opened CSV file");
 }
 
 
@@ -30,116 +43,184 @@ void SimulationTask::onTaskStart() {
     if (firstTime) {
         startTime = millis();
     }
-    started = true;
 }
 
 void SimulationTask::onTaskStop() {
-    started = false;
 }
 
 void SimulationTask::reset() {
-    currentIndex = 0;
-    started = false;
+}
+
+// Helper function to trim whitespace and newlines from string
+std::string trimString(const std::string& str) {
+    size_t start = 0;
+    size_t end = str.length();
+    
+    // Trim from start
+    while (start < end && (std::isspace(str[start]) || str[start] == '\n' || str[start] == '\r')) {
+        start++;
+    }
+    
+    // Trim from end
+    while (end > start && (std::isspace(str[end - 1]) || str[end - 1] == '\n' || str[end - 1] == '\r')) {
+        end--;
+    }
+    
+    return str.substr(start, end - start);
 }
 
 void SimulationTask::taskFunction() {
-    auto now = millis();
-    double elapsed = now - startTime;
+    try {
+        while (running) {
+            auto now = millis();
+            double elapsed = now - startTime;
 
-    if (firstTime) {
-        String header = sdManager.readLine(); // skip header
-        firstTime = false;
-    }
+            if (firstTime) {
+                String header = sdManager.readLine(); // skip header
+                firstTime = false;
+            }
+            
+            String line = sdManager.readLine();
+            
+            // Preprocess the line: trim whitespace and newlines
+            std::string lineStr = trimString(std::string(line.c_str()));
+            
+            if (lineStr.length() > 0) {
+                std::stringstream ss(lineStr);
+                std::string cell;
+                
+                // Read time
+                std::getline(ss, cell, ',');
+                double time_s = std::stod(trimString(cell));
+                LOG_INFO("SimulationTask", "READ TIME: %.2f", time_s);
 
-    String line = sdManager.readLine();
-    if (line.length() > 0) {
-        std::stringstream ss(line.c_str());
-        std::string cell;
-        // Read time
-        std::getline(ss, cell, ',');
-        // Parse CSV columns into variables
-        double AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2;
-        double AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2;
-        double OmegaBody_degs, OmegaSensor_degs;
-        double OmegaBody_degs_Y, OmegaSensor_degs_Y;
-        double OmegaBody_degs_Z, OmegaSensor_degs_Z;
-        double Z_real_m, Z_sensor_m;
-        double Pressure_real_Pa, Pressure_sensor_Pa;
+                // Parse CSV columns into variables
+                double AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2;
+                double AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2;
+                double OmegaBody_degs, OmegaSensor_degs;
+                double OmegaBody_degs_Y, OmegaSensor_degs_Y;
+                double OmegaBody_degs_Z, OmegaSensor_degs_Z;
+                double Z_real_m, Z_sensor_m;
+                double Pressure_real_Pa, Pressure_sensor_Pa;
 
-        std::vector<double> values;
-        while (std::getline(ss, cell, ',')) {
-            values.push_back(std::stod(cell));
+                std::vector<double> values;
+                while (std::getline(ss, cell, ',')) {
+                    std::string trimmedCell = trimString(cell);
+                    if (trimmedCell.length() > 0) {
+                        try {
+                            values.push_back(std::stod(trimmedCell));
+                        } catch (const std::exception& e) {
+                            LOG_ERROR("SimulationTask", "Failed to parse value: '%s', error: %s", 
+                                     trimmedCell.c_str(), e.what());
+                        }
+                    }
+                }
+                
+                // Check if we have enough values
+                if (values.size() < 16) {
+                    LOG_ERROR("SimulationTask", "Insufficient values in CSV line. Expected 16, got %d", values.size());
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    continue;
+                }
+                
+                // Assign variables from values vector
+                AccBodyX_ms2 = values[0];
+                AccBodyY_ms2 = values[1];
+                AccBodyZ_ms2 = values[2];
+                AccSensorX_ms2 = values[3];
+                AccSensorY_ms2 = values[4];
+                AccSensorZ_ms2 = values[5];
+                OmegaBody_degs = values[6];
+                OmegaSensor_degs = values[7];
+                OmegaBody_degs_Y = values[8];
+                OmegaSensor_degs_Y = values[9];
+                OmegaBody_degs_Z = values[10];
+                OmegaSensor_degs_Z = values[11];
+                Z_real_m = values[12];
+                Z_sensor_m = values[13];
+                Pressure_real_Pa = values[14];
+                Pressure_sensor_Pa = values[15];
+                
+                // Mappings between values and BNO055 data fields
+                SensorData bnoData("BNO055");
+                bnoData.setData("system_calibration", 3);
+                bnoData.setData("gyro_calibration", 3);
+                bnoData.setData("accel_calibration", 3);
+                bnoData.setData("mag_calibration", 3);
+
+                auto xAcc = static_cast<float>(AccBodyX_ms2);
+                auto yAcc = static_cast<float>(AccBodyY_ms2);
+                auto zAcc = static_cast<float>(AccBodyZ_ms2);
+                auto accMagnitude = std::sqrt(xAcc * xAcc + yAcc * yAcc + zAcc * zAcc);
+                bnoData.setData("accelerometer", std::map<std::string, float>{
+                    {"x", xAcc},
+                    {"y", yAcc},
+                    {"z", zAcc},
+                    {"magnitude", accMagnitude}});
+
+                bnoData.setData("angular_velocity", std::map<std::string, float>{
+                    {"x", static_cast<float>(OmegaBody_degs)},
+                    {"y", static_cast<float>(OmegaBody_degs_Y)},
+                    {"z", static_cast<float>(OmegaBody_degs_Z)}});
+
+                // Mappings between MS561101BA03 data fields and columns
+                SensorData baroData1 = SensorData("MS561101BA03");
+                baroData1.setData("pressure", Pressure_sensor_Pa);
+
+                SensorData baroData2 = SensorData("MS561101BA03");
+                baroData2.setData("pressure", Pressure_sensor_Pa);
+
+                // Mappings between LIS3DHTR data fields and data fields
+                SensorData accData = SensorData("LIS3DHTR");
+                accData.setData("accel_x", AccSensorX_ms2);
+                accData.setData("accel_y", AccSensorY_ms2);
+                accData.setData("accel_z", AccSensorZ_ms2);
+                accData.setData("accel_magnitude", std::sqrt(AccSensorX_ms2 * AccSensorX_ms2 +
+                                                            AccSensorY_ms2 * AccSensorY_ms2 +
+                                                            AccSensorZ_ms2 * AccSensorZ_ms2));
+                
+                // Mapping between GPS data fields and data fields                                                            
+                SensorData gpsData = SensorData("GPS");
+                gpsData.setData("altitude",  Z_sensor_m);
+
+                // Inject into shared sensor data
+                if (sensorData && xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
+                    sensorData->imuData = bnoData;
+                    sensorData->baroData1 = baroData1;
+                    sensorData->baroData2 = baroData2;
+                    //sensorData->accData = accData;
+                    sensorData->gpsData = gpsData;
+                    sensorData->timestamp = static_cast<uint32_t>(now);
+                    sensorData->dataValid = true;
+
+                    xSemaphoreGive(dataMutex);
+                }
+                // Log of all the read data
+                LOG_INFO("SimulationTask", 
+                    "Time: %.2f s | AccBody: [%.2f, %.2f, %.2f] m/s² Mag: %.2f | AccSensor: [%.2f, %.2f, %.2f] m/s² | "
+                    "OmegaBody: [%.2f, %.2f, %.2f] deg/s | OmegaSensor: [%.2f, %.2f, %.2f] deg/s | "
+                    "Z_real: %.2f m | Z_sensor: %.2f m | Pressure_real: %.2f Pa | Pressure_sensor: %.2f Pa",
+                    time_s,
+                    AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2, accMagnitude,
+                    AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2,
+                    OmegaBody_degs, OmegaBody_degs_Y, OmegaBody_degs_Z,
+                    OmegaSensor_degs, OmegaSensor_degs_Y, OmegaSensor_degs_Z,
+                    Z_real_m, Z_sensor_m,
+                    Pressure_real_Pa, Pressure_sensor_Pa
+                );
+            } else {
+                LOG_INFO("SimulationTask", "End of CSV file reached, stopping simulation.");
+                break;
+            }
+
+            // Sleep for 100ms, which is the time gap between simulation data points
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
-        
-        // Assign variables from values vector
-        AccBodyX_ms2 = values[0];
-        AccBodyY_ms2 = values[1];
-        AccBodyZ_ms2 = values[2];
-        AccSensorX_ms2 = values[3];
-        AccSensorY_ms2 = values[4];
-        AccSensorZ_ms2 = values[5];
-        OmegaBody_degs = values[6];
-        OmegaSensor_degs = values[7];
-        OmegaBody_degs_Y = values[8];
-        OmegaSensor_degs_Y = values[9];
-        OmegaBody_degs_Z = values[10];
-        OmegaSensor_degs_Z = values[11];
-        Z_real_m = values[12];
-        Z_sensor_m = values[13];
-        Pressure_real_Pa = values[14];
-        Pressure_sensor_Pa = values[15];
-        
-        // Mappings between values and BNO055 data fields
-        SensorData bnoData("BNO055");
-        bnoData.setData("system_calibration", 3);
-        bnoData.setData("gyro_calibration", 3);
-        bnoData.setData("accel_calibration", 3);
-        bnoData.setData("mag_calibration", 3);
-
-        bnoData.setData("linear_acceleration", std::map<std::string, float>{
-            {"x", static_cast<float>(AccBodyX_ms2)},
-            {"y", static_cast<float>(AccBodyY_ms2)},
-            {"z", static_cast<float>(AccBodyZ_ms2)}});
-
-        bnoData.setData("angular_velocity", std::map<std::string, float>{
-            {"x", static_cast<float>(OmegaBody_degs)},
-            {"y", static_cast<float>(OmegaBody_degs_Y)},
-            {"z", static_cast<float>(OmegaBody_degs_Z)}});
-
-        // Mappings between MS561101BA03 data fields and columns
-        SensorData baroData1 = SensorData("MS561101BA03");
-        baroData1.setData("pressure", Pressure_sensor_Pa);
-
-        SensorData baroData2 = SensorData("MS561101BA03");
-        baroData2.setData("pressure", Pressure_sensor_Pa);
-
-        // Mappings between LIS3DHTR data fields and data fields
-        SensorData accData = SensorData("LIS3DHTR");
-        accData.setData("accel_x", AccSensorX_ms2);
-        accData.setData("accel_y", AccSensorY_ms2);
-        accData.setData("accel_z", AccSensorZ_ms2);
-        accData.setData("accel_magnitude", std::sqrt(AccSensorX_ms2 * AccSensorX_ms2 +
-                                                    AccSensorY_ms2 * AccSensorY_ms2 +
-                                                    AccSensorZ_ms2 * AccSensorZ_ms2));
-        
-        // Mapping between GPS data fields and data fields                                                            
-        SensorData gpsData = SensorData("GPS");
-        gpsData.setData("altitude",  Z_sensor_m);
-
-        // Inject into shared sensor data
-        if (sensorData && xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
-            sensorData->imuData = bnoData;
-            sensorData->baroData1 = baroData1;
-            sensorData->baroData2 = baroData2;
-            //sensorData->accData = accData;
-            sensorData->gpsData = gpsData;
-            sensorData->timestamp = static_cast<uint32_t>(now);
-            sensorData->dataValid = true;
-
-            xSemaphoreGive(dataMutex);
+    } catch (const std::exception &e) {
+        while (true) {
+            LOG_ERROR("SimulationTask", "Exception in taskFunction: %s", e.what());
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Add delay to prevent tight error loop
         }
     }
-
-    // Sleep for 100ms, which is the time gap between simulation data points
-    vTaskDelay(pdMS_TO_TICKS(100));
+    
 }
