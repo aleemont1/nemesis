@@ -109,9 +109,29 @@ private:
     SemaphoreHandle_t dataMutex;
     ISensor *baro1;
     ISensor *baro2;
+
+    // Maximum altitude reached for easy access in BarometerTask
+    static float max_altitude_read;
     
     // Noise reduction: Median filters reject spikes better than moving average
     // Window size from config.h - tune BAROMETER_FILTER_WINDOW for your needs
     MedianFilter pressureFilter1{BAROMETER_FILTER_WINDOW};
     MedianFilter pressureFilter2{BAROMETER_FILTER_WINDOW};
+
+    // Buffer for tendency filtering, used in isStillRising()
+    std::vector<float> pressureTrendBuffer;
+    size_t trendBufferSize = 10; // Apogee detection window size
+
+    // Called in update to add new values to the filter and remove old ones
+    void addPressureTrendValue(float value) {
+        if (pressureTrendBuffer.size() >= trendBufferSize)
+            pressureTrendBuffer.erase(pressureTrendBuffer.begin());
+        pressureTrendBuffer.push_back(value);
+    }
+
+    // Controls if the last readings indicate that the system is rising or not
+    bool isStillRising();
+
+    // If max altitude reached is needed to be retrived
+    float getMaxAltitudeReached() { return max_altitude_read; }
 };

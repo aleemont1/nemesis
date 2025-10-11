@@ -5,6 +5,9 @@
 
 #define MAX_ALTITUDE_THRESHOLD 5000.0f // meters
 
+// Max altitude initialization
+float BarometerTask::max_altitude_read = -1000.0f;
+
 constexpr float TROPOSPHERE_HEIGHT = 11000.f; // Troposphere height [m]
 constexpr float a = 0.0065f;                  // Troposphere temperature gradient [deg/m]
 constexpr float R = 287.05f;                  // Air gas constant [J/Kg/K]
@@ -19,7 +22,6 @@ float relAltitude(float pressure, float pressureRef = 101070.0f,
 
 void BarometerTask::taskFunction()
 {
-    static float max_altitude_read = -1000.0f;
     float altitude1 = -1000.0f;
     float altitude2 = -1000.0f;
     float pressure1 = -1.0f;
@@ -52,7 +54,8 @@ void BarometerTask::taskFunction()
 
                 // Apply pressure filter, then calculate altitude from filtered pressure
                 filtered_pressure1 = pressureFilter1.update(pressure1);
-                
+                addPressureTrendValue(filtered_pressure1);
+
                 // Calculate altitudes for comparison
                 altitude1 = relAltitude(pressure1);              // Raw altitude
                 filtered_altitude1 = relAltitude(filtered_pressure1);  // Filtered altitude
@@ -88,6 +91,7 @@ void BarometerTask::taskFunction()
 
                 // Apply pressure filter, then calculate altitude from filtered pressure
                 filtered_pressure2 = pressureFilter2.update(pressure2);
+                addPressureTrendValue(filtered_pressure2);
                 
                 // Calculate altitudes for comparison
                 altitude2 = relAltitude(pressure2);              // Raw altitude
@@ -127,4 +131,19 @@ void BarometerTask::taskFunction()
 
         vTaskDelay(pdMS_TO_TICKS(5)); // 200Hz
     }
+
+}
+
+// True if at least one value in the buffer is higher than the previous maximum 
+// This function could be moved to the hpp for cleaner code, but just want to be sure
+// possiamo fare in questo modo o mettere questo codice nel loop qui sopra ed avere una variabile bool privata con una funzione getter
+bool BarometerTask::isStillRising() {
+    if (pressureTrendBuffer.size() < trendBufferSize) return false;
+    
+    for (size_t i = 0; i < pressureTrendBuffer.size(); ++i) {
+        if (pressureTrendBuffer[i] > max_altitude_read) {
+            return true;
+        }
+    }
+    return false;
 }
