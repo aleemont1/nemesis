@@ -54,6 +54,7 @@ void BarometerTask::taskFunction()
 
                 // Apply pressure filter, then calculate altitude from filtered pressure
                 filtered_pressure1 = pressureFilter1.update(pressure1);
+                //Da cambiare quando si sceglie il barometro da usare
                 addPressureTrendValue(filtered_pressure1);
 
                 // Calculate altitudes for comparison
@@ -91,6 +92,8 @@ void BarometerTask::taskFunction()
 
                 // Apply pressure filter, then calculate altitude from filtered pressure
                 filtered_pressure2 = pressureFilter2.update(pressure2);
+
+                //Da cambiare quando si sceglie il barometro da usare
                 addPressureTrendValue(filtered_pressure2);
                 
                 // Calculate altitudes for comparison
@@ -129,16 +132,10 @@ void BarometerTask::taskFunction()
             isRising = std::make_shared<bool>(false);
         }
 
-        /*
-        // True se l'ultima lettura del buffer è inferiore alla quota di deploy
         
-            if (pressureTrendBuffer.empty()){
-                false;
-            } else if(lastAltitude < mainDeploymentAltitude;){
-                //pressureTrendBuffer.back();
-                true;
-            }
-        */
+        // True se l'ultima lettura del buffer è inferiore alla quota di deploy
+        //Da cambiare quando si sceglie il barometro da usare
+        currentHeight = std::make_shared<float>( (filtered_altitude1 + filtered_altitude2) / 2.0f );
 
         if (filtered_altitude1 > max_altitude_read)
             max_altitude_read = filtered_altitude1;
