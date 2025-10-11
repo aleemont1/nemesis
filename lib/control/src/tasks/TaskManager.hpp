@@ -15,7 +15,9 @@
 #include "EkfTask.hpp"
 #include "GpsTask.hpp"
 #include "SimulationTask.hpp"
-//#include "TelemetryTask.hpp"
+#include "TelemetryTask.hpp"
+#include "BarometerTask.hpp"
+#include <EspNowTransmitter.hpp>
 
 #define SIMULATION_DATA // Comment this out to use real sensors
 
@@ -33,6 +35,9 @@ private:
     SemaphoreHandle_t loggerMutex;
 
     std::shared_ptr<SD> sd;
+    
+    // Telemetry
+    std::shared_ptr<EspNowTransmitter> espNowTransmitter;
     
 public:
     TaskManager(std::shared_ptr<SharedSensorData> sensorData,

@@ -1,4 +1,4 @@
-#include <Arduino.h>
+/*#include <Arduino.h>
 #include <Wire.h>
 #include <MS561101BA03.hpp>
 
@@ -83,3 +83,4 @@ void loop() {
 
   delay(2000);
 }
+*/

@@ -8,12 +8,12 @@ enum class TaskType
     SENSOR,
     SIMULATION,
     EKF,
-    APOGEE_DETECTION,
     RECOVERY,
     DATA_COLLECTION,
     SD_LOGGING,
     TELEMETRY,
     GPS,
+    BAROMETER,
     LOGGING
 };
 
