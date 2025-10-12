@@ -81,8 +81,8 @@ void initializeComponents();
 void sensorsCalibration();
 void initializeKalman();
 void printSystemInfo();
-void monitorTasks();
 void testRoutine();
+void gpsFix();
 
 void setup()
 {
@@ -141,8 +141,9 @@ void setup()
 
     // Initialize kalman
     statusManager.setSystemCode(CALIBRATING);
-    initializeKalman();
-
+    //initializeKalman();
+    gpsFix();
+    statusManager.setSystemCode(SYSTEM_OK);
     // Print system information
     printSystemInfo();
 
@@ -469,42 +470,6 @@ void sensorsCalibration()
     {
         LOG_WARNING("BNO055", "BNO055 not initialized, skipping calibration.");
     }
-    if (gps)
-    {
-        LOG_INFO("GPS", "Checking GPS lock...");
-
-        bool gpsLocked = false;
-        unsigned long startTime = millis();
-
-        while (!gpsLocked && (millis() - startTime < GPS_FIX_TIMEOUT_MS))
-        {
-            auto gpsDataOpt = gps->getData();
-            if (gpsDataOpt.has_value())
-            {
-                LOG_INFO("GPS", "Getting GPS data...");
-                auto gpsData = gpsDataOpt.value();
-                auto fix_opt = gpsData.getData("fix");
-                auto satellites_opt = gpsData.getData("satellites");
-                if (fix_opt.has_value())
-                {
-                    uint8_t fix = std::get<uint8_t>(fix_opt.value());
-                    LOG_INFO("GPS", "Fix value: %d", fix);
-                    if (fix >= GPS_MIN_FIX)
-                    {
-                        gpsLocked = true;
-                        LOG_INFO("GPS", "GPS lock acquired. Satellites: %d", std::get<uint8_t>(satellites_opt.value()));
-                    }
-                }
-            }
-            delay(GPS_FIX_LOOKUP_INTERVAL_MS);
-        }
-
-        if (!gpsLocked)
-        {
-            LOG_ERROR("GPS", "GPS lock not acquired within timeout period.");
-        }
-    }
-
     LOG_INFO("Calibration", "Sensor calibration complete.");
     statusManager.setSystemCode(SYSTEM_OK);
 }
@@ -558,21 +523,21 @@ void initializeKalman()
         if (bnoDataOpt.has_value())
         {
             auto bnoData = bnoDataOpt.value();
-            
+
             // Get accelerometer data from BNO055
             auto accel_opt = bnoData.getData("accelerometer");
             auto mag_opt = bnoData.getData("magnetometer");
-            
+
             if (accel_opt.has_value() && mag_opt.has_value())
             {
                 // Extract accelerometer values
                 auto accelMap = std::get<std::map<std::string, float>>(accel_opt.value());
                 Eigen::Vector3f accel(accelMap["x"], accelMap["y"], accelMap["z"]);
-                
+
                 // Extract magnetometer values
                 auto magMap = std::get<std::map<std::string, float>>(mag_opt.value());
                 Eigen::Vector3f mag(magMap["x"], magMap["y"], magMap["z"]);
-                
+
                 // Sanity check: accelerometer should be close to 9.8 m/s^2 when stationary
                 float accelNorm = accel.norm();
                 if (accelNorm > 8.0f && accelNorm < 12.0f) // Allow some tolerance
@@ -580,7 +545,7 @@ void initializeKalman()
                     accelSamples.push_back(accel);
                     magSamples.push_back(mag);
                     successfulSamples++;
-                    
+
                     if (successfulSamples >= NUM_CALIBRATION_SAMPLES)
                     {
                         break; // Got enough good samples
@@ -588,19 +553,19 @@ void initializeKalman()
                 }
                 else
                 {
-                    LOG_WARNING("EKF", "Rejecting sample %d: abnormal accel norm %.2f m/s^2 (expected ~9.8)", 
-                               i, static_cast<double>(accelNorm));
+                    LOG_WARNING("EKF", "Rejecting sample %d: abnormal accel norm %.2f m/s^2 (expected ~9.8)",
+                                i, static_cast<double>(accelNorm));
                 }
             }
         }
-        
+
         delay(50); // 50ms between samples = 20 Hz
     }
 
     if (successfulSamples < NUM_CALIBRATION_SAMPLES)
     {
-        LOG_ERROR("EKF", "Failed to collect enough valid samples (%d/%d). Is the rocket moving?", 
-                 successfulSamples, NUM_CALIBRATION_SAMPLES);
+        LOG_ERROR("EKF", "Failed to collect enough valid samples (%d/%d). Is the rocket moving?",
+                  successfulSamples, NUM_CALIBRATION_SAMPLES);
         return;
     }
 
@@ -610,31 +575,31 @@ void initializeKalman()
     auto accelStdDev = calculateStandardDeviation(accelSamples);
     auto magStdDev = calculateStandardDeviation(magSamples);
 
-    LOG_INFO("EKF", "Accelerometer std dev: x=%.4f, y=%.4f, z=%.4f (norm: %.4f)", 
-            static_cast<double>(accelStdDev.x()), 
-            static_cast<double>(accelStdDev.y()), 
-            static_cast<double>(accelStdDev.z()),
-            static_cast<double>(accelStdDev.norm()));
-    
-    LOG_INFO("EKF", "Magnetometer std dev: x=%.4f, y=%.4f, z=%.4f (norm: %.4f)", 
-            static_cast<double>(magStdDev.x()), 
-            static_cast<double>(magStdDev.y()), 
-            static_cast<double>(magStdDev.z()),
-            static_cast<double>(magStdDev.norm()));
+    LOG_INFO("EKF", "Accelerometer std dev: x=%.4f, y=%.4f, z=%.4f (norm: %.4f)",
+             static_cast<double>(accelStdDev.x()),
+             static_cast<double>(accelStdDev.y()),
+             static_cast<double>(accelStdDev.z()),
+             static_cast<double>(accelStdDev.norm()));
+
+    LOG_INFO("EKF", "Magnetometer std dev: x=%.4f, y=%.4f, z=%.4f (norm: %.4f)",
+             static_cast<double>(magStdDev.x()),
+             static_cast<double>(magStdDev.y()),
+             static_cast<double>(magStdDev.z()),
+             static_cast<double>(magStdDev.norm()));
 
     if (accelStdDev.norm() > STD_THRESHOLD)
     {
-        LOG_WARNING("EKF", "High accelerometer noise during calibration: %.4f (threshold: %.4f)", 
-                   static_cast<double>(accelStdDev.norm()), 
-                   static_cast<double>(STD_THRESHOLD));
+        LOG_WARNING("EKF", "High accelerometer noise during calibration: %.4f (threshold: %.4f)",
+                    static_cast<double>(accelStdDev.norm()),
+                    static_cast<double>(STD_THRESHOLD));
         LOG_WARNING("EKF", "Rocket may be moving or experiencing vibrations!");
     }
 
     if (magStdDev.norm() > STD_THRESHOLD)
     {
-        LOG_WARNING("EKF", "High magnetometer noise during calibration: %.4f (threshold: %.4f)", 
-                   static_cast<double>(magStdDev.norm()), 
-                   static_cast<double>(STD_THRESHOLD));
+        LOG_WARNING("EKF", "High magnetometer noise during calibration: %.4f (threshold: %.4f)",
+                    static_cast<double>(magStdDev.norm()),
+                    static_cast<double>(STD_THRESHOLD));
         LOG_WARNING("EKF", "Magnetic interference detected!");
     }
 
@@ -642,36 +607,36 @@ void initializeKalman()
     auto accelMean = calculateMean(accelSamples);
     auto magMean = calculateMean(magSamples);
 
-    LOG_INFO("EKF", "Gravity vector (accel mean): x=%.4f, y=%.4f, z=%.4f (norm: %.4f m/s^2)", 
-            static_cast<double>(accelMean.x()), 
-            static_cast<double>(accelMean.y()), 
-            static_cast<double>(accelMean.z()),
-            static_cast<double>(accelMean.norm()));
-    
-    LOG_INFO("EKF", "Magnetic field (mag mean): x=%.4f, y=%.4f, z=%.4f (norm: %.4f uT)", 
-            static_cast<double>(magMean.x()), 
-            static_cast<double>(magMean.y()), 
-            static_cast<double>(magMean.z()),
-            static_cast<double>(magMean.norm()));
+    LOG_INFO("EKF", "Gravity vector (accel mean): x=%.4f, y=%.4f, z=%.4f (norm: %.4f m/s^2)",
+             static_cast<double>(accelMean.x()),
+             static_cast<double>(accelMean.y()),
+             static_cast<double>(accelMean.z()),
+             static_cast<double>(accelMean.norm()));
+
+    LOG_INFO("EKF", "Magnetic field (mag mean): x=%.4f, y=%.4f, z=%.4f (norm: %.4f uT)",
+             static_cast<double>(magMean.x()),
+             static_cast<double>(magMean.y()),
+             static_cast<double>(magMean.z()),
+             static_cast<double>(magMean.norm()));
 
     // Initialize Kalman Filter with calibration data
     LOG_INFO("EKF", "Initializing Kalman Filter with calibration data...");
     ekf = std::make_shared<KalmanFilter1D>(accelMean, magMean);
-    
+
     if (ekf)
     {
         LOG_INFO("EKF", "✓ Kalman Filter initialized successfully");
-        
+
         // Print initial state
-        float* state = ekf->state();
-        LOG_INFO("EKF", "Initial state: pos=%.4f m, vel=%.4f m/s", 
-                static_cast<double>(state[0]), 
-                static_cast<double>(state[1]));
+        float *state = ekf->state();
+        LOG_INFO("EKF", "Initial state: pos=%.4f m, vel=%.4f m/s",
+                 static_cast<double>(state[0]),
+                 static_cast<double>(state[1]));
         LOG_INFO("EKF", "Initial quaternion: w=%.4f, x=%.4f, y=%.4f, z=%.4f",
-                static_cast<double>(state[2]),
-                static_cast<double>(state[3]),
-                static_cast<double>(state[4]),
-                static_cast<double>(state[5]));
+                 static_cast<double>(state[2]),
+                 static_cast<double>(state[3]),
+                 static_cast<double>(state[4]),
+                 static_cast<double>(state[5]));
     }
     else
     {
@@ -1118,6 +1083,61 @@ void testRoutine()
             LOG_INFO("Test", "Test completato con successo!");
             // Show success pattern before returning to menu
             statusManager.playBlockingPattern(TEST_SUCCESS, 1000);
+        }
+    }
+}
+
+void gpsFix()
+{
+    if (gps)
+    {
+        LOG_INFO("GPS", "Checking GPS lock...");
+        bool gpsLocked = false;
+        unsigned long startTime = millis();
+
+        while (!gpsLocked && (millis() - startTime < GPS_FIX_TIMEOUT_MS))
+        {
+            auto gpsDataOpt = gps->getData();
+            if (gpsDataOpt.has_value())
+            {
+                LOG_INFO("GPS", "Getting GPS data...");
+                auto gpsData = gpsDataOpt.value();
+                auto fix_opt = gpsData.getData("fix");
+                auto satellites_opt = gpsData.getData("satellites");
+                if (fix_opt.has_value())
+                {
+                    uint8_t fix = std::get<uint8_t>(fix_opt.value());
+                    LOG_INFO("GPS", "Fix value: %d", fix);
+                    if (fix >= GPS_MIN_FIX)
+                    {
+                        gpsLocked = true;
+                        LOG_INFO("GPS", "GPS lock acquired. Satellites: %d", std::get<uint8_t>(satellites_opt.value()));
+                    }
+                }
+            }
+            delay(GPS_FIX_LOOKUP_INTERVAL_MS);
+        }
+
+        if (!gpsLocked)
+        {
+            LOG_ERROR("GPS", "GPS lock not acquired within timeout period.");
+            statusManager.setSystemCode(SystemCode::GPS_NO_SIGNAL);
+            while(true) {
+                // Read OVERRIDE from Serial
+                if (Serial.available()) {
+                    String input = Serial.readStringUntil('\n');
+                    input.trim();
+                    input.toUpperCase();
+                    Serial.println("Type OVERRIDE to bypass GPS lock and continue.");
+                    if (input == "OVERRIDE") {
+                        LOG_WARNING("GPS", "GPS lock override received. Continuing without GPS.");
+                        statusManager.setSystemCode(SYSTEM_OK);
+                        break;
+                    } else {
+                        LOG_INFO("GPS", "Invalid input. Type OVERRIDE to bypass GPS lock.");
+                    }
+                }
+            }
         }
     }
 }
