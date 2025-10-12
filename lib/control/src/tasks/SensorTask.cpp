@@ -138,9 +138,8 @@ void SensorTask::taskFunction()
             }
         }
 
-        // Adding the data to the RocketLogger - REDUCED FREQUENCY TO PREVENT MEMORY EXHAUSTION
         // Only log every 50 loops (every ~5 seconds) instead of every loop
-        if (loopCount % 50 == 0 && xSemaphoreTake(loggerMutex, pdMS_TO_TICKS(10)) == pdTRUE)
+        if (loopCount % 3 == 0 && xSemaphoreTake(loggerMutex, pdMS_TO_TICKS(10)) == pdTRUE)
         {
             auto timestampData = SensorData("Timestamp");
             timestampData.setData("timestamp", static_cast<int>(millis()));
