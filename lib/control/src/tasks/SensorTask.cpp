@@ -5,8 +5,12 @@ SensorTask::SensorTask(std::shared_ptr<SharedSensorData> sensorData,
                        SemaphoreHandle_t mutex,
                        std::shared_ptr<ISensor> imu,
                        std::shared_ptr<ISensor> barometer1,
-                       std::shared_ptr<ISensor> barometer2)
-    : BaseTask("SensorTask"), sensorData(sensorData), dataMutex(mutex)
+                       std::shared_ptr<ISensor> barometer2,
+                       std::shared_ptr<RocketLogger> rocketLogger, 
+                       SemaphoreHandle_t loggerMutex)
+    : BaseTask("SensorTask"), 
+    sensorData(sensorData), dataMutex(mutex),
+    rocketLogger(rocketLogger), loggerMutex(loggerMutex)
 {
     bno055 = imu.get();
     baro1 = barometer1.get();
@@ -123,10 +127,40 @@ void SensorTask::taskFunction()
         // Log memory usage every 10 loops
         if (loopCount % 10 == 0)
         {
+            uint32_t freeHeap = ESP.getFreeHeap();
             LOG_INFO("Sensor", "L%lu: Stack HwM:%u, Heap=%u, Memory=%u",
-                          loopCount, uxTaskGetStackHighWaterMark(NULL), ESP.getFreeHeap(),
+                          loopCount, uxTaskGetStackHighWaterMark(NULL), freeHeap,
                           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                          
+            // Check for low memory condition
+            if (freeHeap < 50000) { // Warning threshold
+                LOG_WARNING("Sensor", "LOW MEMORY WARNING: Only %u bytes free heap remaining!", freeHeap);
+            }
         }
+
+        // Adding the data to the RocketLogger - REDUCED FREQUENCY TO PREVENT MEMORY EXHAUSTION
+        // Only log every 50 loops (every ~5 seconds) instead of every loop
+        if (loopCount % 50 == 0 && xSemaphoreTake(loggerMutex, pdMS_TO_TICKS(10)) == pdTRUE)
+        {
+            auto timestampData = SensorData("Timestamp");
+            timestampData.setData("timestamp", static_cast<int>(millis()));
+            rocketLogger->logSensorData(timestampData);
+
+            // Create a copy of sensorData under mutex to avoid pointer issues
+            auto imuCopy = sensorData->imuData;
+            auto baro1Copy = sensorData->baroData1;
+            auto baro2Copy = sensorData->baroData2;
+            
+            rocketLogger->logSensorData(imuCopy);
+            rocketLogger->logSensorData(baro1Copy);
+            rocketLogger->logSensorData(baro2Copy);
+
+            xSemaphoreGive(loggerMutex);
+            
+            // Log current RocketLogger memory usage for monitoring
+            LOG_INFO("Sensor", "RocketLogger entries: %d", rocketLogger->getLogCount());
+        }
+
         loopCount++;
         
         // Shorter delay to exit faster (split into smaller chunks)

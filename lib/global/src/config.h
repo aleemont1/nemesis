@@ -42,6 +42,12 @@
 
 // #define TRANSMITTER_CONFIG_MODE_ENABLE // Enable configuration mode for the transmitter (needs to be tested on new hardware)
 
+// Number of log entries to batch before writing to SD card
+#define BATCH_SIZE 10
+
+// Maximum log entries before forcing a clear (emergency protection)
+#define MAX_LOG_ENTRIES 20
+
 /* Flight parameters configuration */
 #define LIFTOFF_ACCELERATION_THRESHOLD GRAVITY * 2.0f // Threshold for the detection of liftoff when relative_acceleration is > 2G in any direction (relative_acceleration = acceleration - gravity)
 #define LIFTOFF_TIMEOUT_MS 100    // Threshold for the detection of liftoff
@@ -56,6 +62,11 @@
 #define ESPNOW_CHANNEL 1 // WiFi channel (1-13)
 #define TELEMETRY_INTERVAL_MS 700
 #define TOUCHDOWN_ALTITUDE_THRESHOLD 5.0f // Altitude threshold for touchdown detection (in meters)
+
+// In the case of the model velocity is extremely wrong, the access to the parachute is denied, and let to the CatsVega, to avoid the opening of it during ascension
+#define MIN_ACCECTABLE_VELOCITY -1000
+#define MAX_ACCECTABLE_VELOCITY 1000
+
 // Kalman Constants
 #define NUM_CALIBRATION_SAMPLES 200
 #define STD_THRESHOLD 0.1f
