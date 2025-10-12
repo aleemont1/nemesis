@@ -35,9 +35,7 @@ SDLoggingTask::~SDLoggingTask() {
     stop();
 }
 
-void SDLoggingTask::taskFunction() {
-    LOG_INFO("SDLoggingTask", "Task started, batch size: %d", BATCH_SIZE);
-    
+void SDLoggingTask::taskFunction() {    
     while (running) {
         esp_task_wdt_reset();
         
@@ -47,7 +45,6 @@ void SDLoggingTask::taskFunction() {
         size_t currentLogCount = rocketLogger->getLogCount();
         
         if (currentLogCount >= BATCH_SIZE) {
-            LOG_INFO("SDLoggingTask", "Batch size reached (%zu >= %d), processing...", currentLogCount, BATCH_SIZE);
             
             if (sdInitialized && running) { // Check running before SD operations
                 
@@ -122,8 +119,6 @@ void SDLoggingTask::taskFunction() {
                     LOG_ERROR("SDLoggingTask", "Failed to acquire logger mutex for clearing data (SD not initialized)");
                 }
             }
-        } else {
-            LOG_INFO("SDLoggingTask", "Current log count (%zu) below batch size (%d), waiting...", currentLogCount, BATCH_SIZE);
         }
         
         vTaskDelay(pdMS_TO_TICKS(20));

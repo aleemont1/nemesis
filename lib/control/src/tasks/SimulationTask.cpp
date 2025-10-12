@@ -137,20 +137,26 @@ void SimulationTask::taskFunction() {
                 LOG_INFO("SimulationTask", "READ TIME: %.2f (Line %u)", time_s, filePosition);
 
                 // Parse CSV columns into variables
-                double AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2;
-                double AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2;
-                double OmegaBody_degs, OmegaSensor_degs;
-                double OmegaBody_degs_Y, OmegaSensor_degs_Y;
-                double OmegaBody_degs_Z, OmegaSensor_degs_Z;
-                double Z_real_m, Z_sensor_m;
-                double Pressure_real_Pa, Pressure_sensor_Pa;
+                #ifdef OLD_DATA
+                    float AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2;
+                    float AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2;
+                    float OmegaBody_degs, OmegaSensor_degs;
+                    float OmegaBody_degs_Y, OmegaSensor_degs_Y;
+                    float OmegaBody_degs_Z, OmegaSensor_degs_Z;
+                    float Z_real_m, Z_sensor_m;
+                    float Pressure_real_Pa, Pressure_sensor_Pa;
+                #else
+                    float ax, ay, az, amag;
+                    float pressure;
+                    float z;
+                #endif
 
-                std::vector<double> values;
+                std::vector<float> values;
                 while (std::getline(ss, cell, ',')) {
                     std::string trimmedCell = trimString(cell);
                     if (trimmedCell.length() > 0) {
                         try {
-                            values.push_back(std::stod(trimmedCell));
+                            values.push_back(std::stof(trimmedCell));
                         } catch (const std::exception& e) {
                             LOG_ERROR("SimulationTask", "Failed to parse value: '%s', error: %s", 
                                      trimmedCell.c_str(), e.what());
@@ -158,72 +164,109 @@ void SimulationTask::taskFunction() {
                     }
                 }
                 
-                // Check if we have enough values
-                if (values.size() < 16) {
-                    LOG_ERROR("SimulationTask", "Insufficient values in CSV line. Expected 16, got %d", values.size());
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    continue;
-                }
-                
                 // Assign variables from values vector
-                AccBodyX_ms2 = values[0];
-                AccBodyY_ms2 = values[1];
-                AccBodyZ_ms2 = values[2];
-                AccSensorX_ms2 = values[3];
-                AccSensorY_ms2 = values[4];
-                AccSensorZ_ms2 = values[5];
-                OmegaBody_degs = values[6];
-                OmegaSensor_degs = values[7];
-                OmegaBody_degs_Y = values[8];
-                OmegaSensor_degs_Y = values[9];
-                OmegaBody_degs_Z = values[10];
-                OmegaSensor_degs_Z = values[11];
-                Z_real_m = values[12];
-                Z_sensor_m = values[13];
-                Pressure_real_Pa = values[14];
-                Pressure_sensor_Pa = values[15];
+                #ifdef OLD_DATA
+                    AccBodyX_ms2 = values[0];
+                    AccBodyY_ms2 = values[1];
+                    AccBodyZ_ms2 = values[2];
+                    AccSensorX_ms2 = values[3];
+                    AccSensorY_ms2 = values[4];
+                    AccSensorZ_ms2 = values[5];
+                    OmegaBody_degs = values[6];
+                    OmegaSensor_degs = values[7];
+                    OmegaBody_degs_Y = values[8];
+                    OmegaSensor_degs_Y = values[9];
+                    OmegaBody_degs_Z = values[10];
+                    OmegaSensor_degs_Z = values[11];
+                    Z_real_m = values[12];
+                    Z_sensor_m = values[13];
+                    Pressure_real_Pa = values[14];
+                    Pressure_sensor_Pa = values[15];
+                #else
+                    ax = values[0];
+                    ay = values[1];
+                    az = values[2];
+                    amag = values[3];
+                    pressure = values[4];
+                    z = values[5];
+                #endif                
                 
-                // Mappings between values and BNO055 data fields
-                SensorData bnoData("BNO055");
-                bnoData.setData("system_calibration", 3);
-                bnoData.setData("gyro_calibration", 3);
-                bnoData.setData("accel_calibration", 3);
-                bnoData.setData("mag_calibration", 3);
-
-                auto xAcc = static_cast<float>(AccBodyX_ms2);
-                auto yAcc = static_cast<float>(AccBodyY_ms2);
-                auto zAcc = static_cast<float>(AccBodyZ_ms2);
-                auto accMagnitude = std::sqrt(xAcc * xAcc + yAcc * yAcc + zAcc * zAcc);
-                bnoData.setData("accelerometer", std::map<std::string, float>{
-                    {"x", xAcc},
-                    {"y", yAcc},
-                    {"z", zAcc},
-                    {"magnitude", accMagnitude}});
-
-                bnoData.setData("angular_velocity", std::map<std::string, float>{
-                    {"x", static_cast<float>(OmegaBody_degs)},
-                    {"y", static_cast<float>(OmegaBody_degs_Y)},
-                    {"z", static_cast<float>(OmegaBody_degs_Z)}});
-
-                // Mappings between MS561101BA03 data fields and columns
-                SensorData baroData1 = SensorData("MS561101BA03");
-                baroData1.setData("pressure", Pressure_sensor_Pa);
-
-                SensorData baroData2 = SensorData("MS561101BA03");
-                baroData2.setData("pressure", Pressure_sensor_Pa);
-
-                // Mappings between LIS3DHTR data fields and data fields
-                SensorData accData = SensorData("LIS3DHTR");
-                accData.setData("accel_x", AccSensorX_ms2);
-                accData.setData("accel_y", AccSensorY_ms2);
-                accData.setData("accel_z", AccSensorZ_ms2);
-                accData.setData("accel_magnitude", std::sqrt(AccSensorX_ms2 * AccSensorX_ms2 +
-                                                            AccSensorY_ms2 * AccSensorY_ms2 +
-                                                            AccSensorZ_ms2 * AccSensorZ_ms2));
                 
-                // Mapping between GPS data fields and data fields                                                            
-                SensorData gpsData = SensorData("GPS");
-                gpsData.setData("altitude",  Z_sensor_m);
+                #ifdef OLD_DATA
+                    // Mappings between values and BNO055 data fields
+                    SensorData bnoData("BNO055");
+                    bnoData.setData("system_calibration", 3);
+                    bnoData.setData("gyro_calibration", 3);
+                    bnoData.setData("accel_calibration", 3);
+                    bnoData.setData("mag_calibration", 3);
+
+                    auto xAcc = static_cast<float>(AccBodyX_ms2);
+                    auto yAcc = static_cast<float>(AccBodyY_ms2);
+                    auto zAcc = static_cast<float>(AccBodyZ_ms2);
+                    auto accMagnitude = std::sqrt(xAcc * xAcc + yAcc * yAcc + zAcc * zAcc);
+                    bnoData.setData("accelerometer", std::map<std::string, float>{
+                        {"x", xAcc},
+                        {"y", yAcc},
+                        {"z", zAcc},
+                        {"magnitude", accMagnitude}});
+
+                    bnoData.setData("angular_velocity", std::map<std::string, float>{
+                        {"x", static_cast<float>(OmegaBody_degs)},
+                        {"y", static_cast<float>(OmegaBody_degs_Y)},
+                        {"z", static_cast<float>(OmegaBody_degs_Z)}});
+
+                    // Mappings between MS561101BA03 data fields and columns
+                    SensorData baroData1 = SensorData("MS561101BA03");
+                    baroData1.setData("pressure", Pressure_sensor_Pa);
+
+                    SensorData baroData2 = SensorData("MS561101BA03");
+                    baroData2.setData("pressure", Pressure_sensor_Pa);
+
+                    // Mappings between LIS3DHTR data fields and data fields
+                    SensorData accData = SensorData("LIS3DHTR");
+                    accData.setData("accel_x", AccSensorX_ms2);
+                    accData.setData("accel_y", AccSensorY_ms2);
+                    accData.setData("accel_z", AccSensorZ_ms2);
+                    accData.setData("accel_magnitude", std::sqrt(AccSensorX_ms2 * AccSensorX_ms2 +
+                                                                AccSensorY_ms2 * AccSensorY_ms2 +
+                                                                AccSensorZ_ms2 * AccSensorZ_ms2));
+                    
+                    // Mapping between GPS data fields and data fields                                                            
+                    SensorData gpsData = SensorData("GPS");
+                    gpsData.setData("altitude",  Z_sensor_m);
+                #else
+                    // Mappings between values and BNO055 data fields
+                    SensorData bnoData("BNO055");
+                    bnoData.setData("system_calibration", 3);
+                    bnoData.setData("gyro_calibration", 3);
+                    bnoData.setData("accel_calibration", 3);
+                    bnoData.setData("mag_calibration", 3);
+
+                    bnoData.setData("accelerometer", std::map<std::string, float>{
+                        {"x", ax},
+                        {"y", ay},
+                        {"z", az},
+                        {"magnitude", amag}});
+
+                    // Mappings between MS561101BA03 data fields and columns
+                    SensorData baroData1 = SensorData("MS561101BA03");
+                    baroData1.setData("pressure", pressure);
+
+                    SensorData baroData2 = SensorData("MS561101BA03");
+                    baroData2.setData("pressure", pressure);
+
+                    // Mappings between LIS3DHTR data fields and data fields
+                    SensorData accData = SensorData("LIS3DHTR");
+                    accData.setData("accel_x", ax);
+                    accData.setData("accel_y", ay);
+                    accData.setData("accel_z", az);
+                    accData.setData("accel_magnitude", amag);
+                    
+                    // Mapping between GPS data fields and data fields                                                            
+                    SensorData gpsData = SensorData("GPS");
+                    gpsData.setData("altitude",  z);
+                #endif
+                
 
                 // Inject into shared sensor data
                 if (sensorData && xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
@@ -240,16 +283,16 @@ void SimulationTask::taskFunction() {
                 
                 // Log of all the read data
                 LOG_INFO("SimulationTask", 
-                    "Time: %.2f s | AccBody: [%.2f, %.2f, %.2f] m/s² Mag: %.2f | AccSensor: [%.2f, %.2f, %.2f] m/s² | "
-                    "OmegaBody: [%.2f, %.2f, %.2f] deg/s | OmegaSensor: [%.2f, %.2f, %.2f] deg/s | "
-                    "Z_real: %.2f m | Z_sensor: %.2f m | Pressure_real: %.2f Pa | Pressure_sensor: %.2f Pa",
+                    "Time: %.2f s | AccSensor: [%.2f, %.2f, %.2f] m/s² Mag: %.2f |"
+                    "pressure: %.2f Pa | Z_sensor: %.2f m",
                     time_s,
-                    AccBodyX_ms2, AccBodyY_ms2, AccBodyZ_ms2, accMagnitude,
-                    AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2,
-                    OmegaBody_degs, OmegaBody_degs_Y, OmegaBody_degs_Z,
-                    OmegaSensor_degs, OmegaSensor_degs_Y, OmegaSensor_degs_Z,
-                    Z_real_m, Z_sensor_m,
-                    Pressure_real_Pa, Pressure_sensor_Pa
+                    #ifdef OLD_DATA
+                        AccSensorX_ms2, AccSensorY_ms2, AccSensorZ_ms2, accMagnitude,
+                        Pressure_sensor_Pa, Z_sensor_m
+                    #else
+                        ax, ay, az, amag,
+                        pressure, z
+                    #endif
                 );
             } else {
                 LOG_INFO("SimulationTask", "End of CSV file reached, stopping simulation.");
@@ -257,7 +300,7 @@ void SimulationTask::taskFunction() {
             }
 
             // Sleep for 100ms, which is the time gap between simulation data points
-            vTaskDelay(pdMS_TO_TICKS(100));
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     } catch (const std::exception &e) {
         while (true) {
