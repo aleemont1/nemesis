@@ -18,7 +18,7 @@
 #include "BarometerTask.hpp"
 #include <EspNowTransmitter.hpp>
 
-#define SIMULATION_DATA // Comment this out to use real sensors
+//#define SIMULATION_DATA // Comment this out to use real sensors
 
 class TaskManager {
 private:
