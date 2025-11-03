@@ -4,7 +4,9 @@
 *.code-workspace
 
 # Doxygen generated files
-docs/html/
+!docs/latex/refman.pdf
 docs/latex/
+docs/html/
 docs/xml/
 *.tmp
+
